@@ -19,6 +19,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [connected, setConnected] = useState(false);
   const [database, setDatabase] = useState(null);
+  const [showRestockAlert, setShowRestockAlert] = useState(true);
   const totalUnits = products.reduce((sum, product) => sum + product.quantity, 0);
   const lowStock = products.filter((product) => product.quantity <= product.minimum).length;
   const visibleProducts = useMemo(() => products.filter((product) => {
@@ -130,7 +131,7 @@ export default function App() {
               <div className="activity-list">{moves.slice(0, 5).map((move) => { const MoveIcon = iconByType[move.type] || Activity; return <div className="activity-item" key={move.id}><div className={`activity-icon ${move.type.toLowerCase()}`}><MoveIcon size={15} /></div><div className="activity-copy"><div><strong>{move.type}</strong><span className="activity-time">{move.time}</span></div><p>{move.product} <span>· {move.reference}</span></p><div className="activity-qty"><span className={move.type === 'Delivery' ? 'qty-negative' : move.type === 'Receipt' ? 'qty-positive' : ''}>{move.type === 'Delivery' ? '−' : move.type === 'Receipt' ? '+' : '↔'}{money(move.quantity)} {products.find((p) => p.name === move.product)?.unit || 'units'}</span><span>· {move.location}</span></div></div></div>; })}</div>
               <button className="activity-footer" onClick={() => notify('You’re viewing the latest movements.')}>View all activity <ArrowRight size={14} /></button>
             </div>
-            <div className="restock-card"><div className="restock-icon"><Bell size={17} /></div><div className="restock-copy"><strong>Stock needs attention</strong><p>{lowStock} products are at or below their minimum level.</p><button onClick={() => setFilter('Low stock')}>Review low stock <ArrowRight size={14} /></button></div><button className="restock-close" aria-label="Dismiss" onClick={(event) => event.currentTarget.parentElement.remove()}><X size={15} /></button></div>
+            {showRestockAlert && <div className="restock-card"><div className="restock-icon"><Bell size={17} /></div><div className="restock-copy"><strong>Stock needs attention</strong><p>{lowStock} products are at or below their minimum level.</p><button onClick={() => setFilter('Low stock')}>Review low stock <ArrowRight size={14} /></button></div><button className="restock-close" aria-label="Dismiss stock alert" onClick={() => setShowRestockAlert(false)}><X size={15} /></button></div>}
           </div>
         </section>
         <section className="quick-actions"><div><span className="quick-kicker">QUICK ACTIONS</span><strong>What would you like to do?</strong></div><div className="quick-action-buttons"><QuickAction icon={ArrowDownLeft} label="Receive stock" tone="green" onClick={() => setModal('Receipt')} /><QuickAction icon={ArrowUpRight} label="Deliver order" tone="orange" onClick={() => setModal('Delivery')} /><QuickAction icon={ArrowLeftRight} label="Transfer stock" tone="blue" onClick={() => setModal('Transfer')} /><QuickAction icon={SlidersHorizontal} label="Adjust inventory" tone="purple" onClick={() => setModal('Adjustment')} /></div></section>
