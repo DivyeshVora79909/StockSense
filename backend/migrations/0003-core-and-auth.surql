@@ -1,4 +1,4 @@
--- STOCKSENSE: raw framework
+-- Authentication and shared account records.
 -- Password is one optional credential. Authentication is established by a
 -- successful access method, not by the presence of the password field.
 
@@ -104,8 +104,7 @@ DEFINE ACCESS OVERWRITE account_code ON DATABASE TYPE RECORD
     }
     DURATION FOR SESSION 8h, FOR TOKEN 1h;
 
--- Append-only operational history. These tables are deliberately outside the
--- compiler's ownership, reader, cascade, and reactive systems.
+-- Append-only operational history.
 DEFINE TABLE OVERWRITE audit_mutation SCHEMAFULL PERMISSIONS NONE;
 
 DEFINE FIELD OVERWRITE at ON audit_mutation TYPE datetime;
@@ -638,5 +637,4 @@ WHEN $event = 'UPDATE' AND $before.password != $after.password THEN {
     UPDATE $after.id SET authentication_revision = $before.authentication_revision + 1;
     DELETE authentication_challenge WHERE principal = $after.id;
 };
-
 

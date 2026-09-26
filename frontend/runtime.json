@@ -1,5 +1,5 @@
 {
-  "url": "ws://127.0.0.1:8000/rpc",
+  "url": "ws://127.0.0.1:8100/rpc",
   "namespace": "stocksense",
   "database": "stocksense"
 }

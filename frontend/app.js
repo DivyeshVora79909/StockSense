@@ -104,7 +104,7 @@ async function onReset(event) {
 
 async function showApp() {
   localStorage.setItem("stocksense.lastUser", String((await query("RETURN $auth.name;")) || "StockSense user"));
-  const context = await query("LET $team = (SELECT name FROM rebase_group WHERE id = $auth.parents[0])[0]; RETURN { team: $auth.parents[0], workspace: $team.name, user: $auth.name };");
+  const context = await query("LET $team = (SELECT name FROM stocksense_group WHERE id = $auth.parents[0])[0]; RETURN { team: $auth.parents[0], workspace: $team.name, user: $auth.name };");
   state.team = context?.team; state.userName = String(context?.user || localStorage.getItem("stocksense.lastUser"));
   if (!state.team) throw new Error("Your account has no StockSense workspace. Contact your workspace administrator.");
   $("#workspace-name").textContent = context?.workspace || "Your workspace";
