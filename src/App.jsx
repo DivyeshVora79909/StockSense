@@ -8,6 +8,9 @@ import {
 import { inventory, saveInventory } from './data.js';
 
 const money = (value) => new Intl.NumberFormat('en-US').format(value);
+const stockAt = (product, location) => product.stockByLocation?.find((stock) => stock.location === location)?.quantity || 0;
+const stockTotal = (product) => product.stockByLocation?.reduce((sum, stock) => sum + stock.quantity, 0) ?? product.quantity;
+const productLocations = (product) => product.stockByLocation?.map((stock) => stock.location) || [product.location];
 const iconByType = { Receipt: ArrowDownLeft, Delivery: ArrowUpRight, Transfer: ArrowLeftRight, Adjustment: SlidersHorizontal };
 
 export default function App() {
@@ -23,12 +26,13 @@ export default function App() {
   const [showRestockAlert, setShowRestockAlert] = useState(true);
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyType, setHistoryType] = useState('All types');
-  const totalUnits = products.reduce((sum, product) => sum + product.quantity, 0);
-  const lowStock = products.filter((product) => product.quantity <= product.minimum).length;
+  const locations = [...new Set(products.flatMap(productLocations))].sort();
+  const totalUnits = products.reduce((sum, product) => sum + stockTotal(product), 0);
+  const lowStock = products.filter((product) => stockTotal(product) <= product.minimum).length;
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesQuery = `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase());
-    const matchesCategory = filter === 'All products' || (filter === 'Low stock' ? product.quantity <= product.minimum : product.category === filter);
-    return matchesQuery && matchesCategory && (locationFilter === 'All locations' || product.location === locationFilter);
+    const matchesCategory = filter === 'All products' || (filter === 'Low stock' ? stockTotal(product) <= product.minimum : product.category === filter);
+    return matchesQuery && matchesCategory && (locationFilter === 'All locations' || productLocations(product).includes(locationFilter));
   }), [products, query, filter, locationFilter]);
   const visibleMoves = useMemo(() => moves.filter((move) => {
     const matchesType = historyType === 'All types' || move.type === historyType;
@@ -43,7 +47,7 @@ export default function App() {
       if (!active) return;
       setConnected(ok); setDatabase(module.getDatabase());
       if (ok) {
-        try { const remote = await module.loadInventory(); if (active && remote?.products.length) { setProducts(remote.products); setMoves(remote.moves); } }
+        try { const remote = await module.loadInventory(); if (active && remote?.products.length) { setProducts(remote.products.map((product) => ({ ...product, stockByLocation: [{ location: product.location || 'Main Warehouse', quantity: Number(product.quantity || 0) }] }))); setMoves(remote.moves); } }
         catch (error) { console.error('Could not load SurrealDB inventory.', error); }
       }
     });
@@ -58,17 +62,23 @@ export default function App() {
   function recordOperation(operation) {
     const product = products.find((item) => item.id === operation.productId);
     const qty = Number(operation.quantity);
-    if (!product || !Number.isFinite(qty) || qty <= 0) return notify('Enter a valid product quantity.');
-    if (operation.type === 'Delivery' && qty > product.quantity) return notify('There is not enough stock for this delivery.');
+    if (!product || !Number.isFinite(qty) || qty < 0 || (qty === 0 && operation.type !== 'Adjustment')) return notify('Enter a valid product quantity.');
     let updated = products.map((item) => ({ ...item }));
     const selected = updated.find((item) => item.id === product.id);
-    if (operation.type === 'Receipt') selected.quantity += qty;
-    if (operation.type === 'Delivery') selected.quantity -= qty;
-    if (operation.type === 'Adjustment') selected.quantity = qty;
+    selected.stockByLocation ||= [{ location: selected.location || 'Main Warehouse', quantity: selected.quantity || 0 }];
+    const source = selected.stockByLocation.find((stock) => stock.location === operation.location);
+    const sourceQty = source?.quantity || 0;
+    if ((operation.type === 'Delivery' || operation.type === 'Transfer') && qty > sourceQty) return notify(`Only ${money(sourceQty)} is available at ${operation.location}.`);
+    if (operation.type === 'Receipt') updateLocationStock(selected, operation.location, sourceQty + qty);
+    if (operation.type === 'Delivery') updateLocationStock(selected, operation.location, sourceQty - qty);
+    if (operation.type === 'Adjustment') updateLocationStock(selected, operation.location, qty);
     if (operation.type === 'Transfer') {
-      selected.location = operation.toLocation || selected.location;
-      selected.warehouse = operation.toLocation === 'Warehouse 2' ? 'Warehouse 2' : 'Main Warehouse';
+      if (operation.location === operation.toLocation) return notify('Choose a different destination location.');
+      updateLocationStock(selected, operation.location, sourceQty - qty);
+      updateLocationStock(selected, operation.toLocation, stockAt(selected, operation.toLocation) + qty);
     }
+    selected.quantity = stockTotal(selected);
+    selected.location = selected.stockByLocation.find((stock) => stock.quantity > 0)?.location || operation.location;
     const move = {
       id: `MV-${Date.now().toString().slice(-6)}`, type: operation.type, product: product.name,
       sku: product.sku, quantity: qty, sourceLocation: operation.location || product.location, location: operation.type === 'Transfer' ? (operation.toLocation || product.location) : (operation.location || product.location),
@@ -82,7 +92,8 @@ export default function App() {
   }
 
   function addProduct(product) {
-    const nextProducts = [{ ...product, id: `p-${Date.now()}` }, ...products];
+    const quantity = Number(product.quantity || 0);
+    const nextProducts = [{ ...product, quantity, id: `p-${Date.now()}`, stockByLocation: [{ location: product.location || 'Main Warehouse', quantity }] }, ...products];
     setProducts(nextProducts); saveInventory({ products: nextProducts, moves }); setModal(''); notify('Product added to inventory.');
     if (database) import('./db.js').then(({ persistProduct }) => persistProduct(product)).catch((error) => console.error('Could not save product.', error));
   }
@@ -130,7 +141,7 @@ export default function App() {
             <div className="panel-heading"><div><h2>Inventory overview</h2><p>Keep track of your products and stock levels.</p></div><button className="button button-small button-secondary" onClick={() => setModal('product')}><Plus size={15} />Add product</button></div>
             <div className="table-toolbar"><div className="search-box"><Search size={16} /><input placeholder="Search products, SKU, or category..." value={query} onChange={(event) => setQuery(event.target.value)} />{query && <button className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={13} /></button>}</div><select aria-label="Filter products" value={filter} onChange={(event) => setFilter(event.target.value)}><option>All products</option><option>Low stock</option>{[...new Set(products.map((product) => product.category))].map((category) => <option key={category}>{category}</option>)}</select><select aria-label="Filter by location" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option>All locations</option>{[...new Set(products.map((product) => product.location))].sort().map((location) => <option key={location}>{location}</option>)}</select></div>
             <div className="table-scroll"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>LOCATION</th><th>IN STOCK</th><th>STATUS</th><th></th></tr></thead><tbody>{visibleProducts.map((product) => <tr key={product.id}>
-              <td><div className="product-cell"><div className={`product-thumb ${product.color}`}>{product.symbol}</div><strong>{product.name}</strong></div></td><td className="muted-cell">{product.sku}</td><td><span className="category-pill">{product.category}</span></td><td><span className="location-cell"><MapPin size={13} />{product.location}</span></td><td><strong>{money(product.quantity)}</strong><span className="uom"> {product.unit}</span></td><td><StockStatus product={product} /></td><td><button className="row-more" aria-label={`More actions for ${product.name}`}><MoreHorizontal size={17} /></button></td>
+              <td><div className="product-cell"><div className={`product-thumb ${product.color}`}>{product.symbol}</div><strong>{product.name}</strong></div></td><td className="muted-cell">{product.sku}</td><td><span className="category-pill">{product.category}</span></td><td><span className="location-cell"><MapPin size={13} />{product.stockByLocation.filter((stock) => stock.quantity > 0).map((stock) => stock.location).join(', ') || 'Out of stock'}</span></td><td><strong>{money(stockTotal(product))}</strong><span className="uom"> {product.unit}</span></td><td><StockStatus product={product} /></td><td><button className="row-more" aria-label={`More actions for ${product.name}`}><MoreHorizontal size={17} /></button></td>
             </tr>)}</tbody></table>{visibleProducts.length === 0 && <div className="empty-state">No products match your search.</div>}</div>
             <div className="table-footer"><span>Showing <strong>{visibleProducts.length}</strong> of <strong>{products.length}</strong> products</span><button className="text-button" onClick={() => { setFilter('All products'); setLocationFilter('All locations'); setQuery(''); }}>Clear filters <X size={13} /></button></div>
           </div>
@@ -152,19 +163,27 @@ export default function App() {
         <footer className="page-footer"><span>StockSense <span className="footer-dot">●</span> Inventory made clear.</span><span><span className="footer-live"><i />All systems operational</span><span className="footer-separator">·</span>Last synced just now</span></footer>
       </div>
     </main>
-    {modal && <OperationModal type={modal} products={products} onClose={() => setModal('')} onSubmit={modal === 'product' ? addProduct : recordOperation} />}
+    {modal && <OperationModal type={modal} products={products} locations={locations} onClose={() => setModal('')} onSubmit={modal === 'product' ? addProduct : recordOperation} />}
     {toast && <div className="toast"><Check size={16} />{toast}</div>}
   </div>;
 }
 
 function StatCard({ label, value, change, icon: Icon, tone, warning }) { return <div className="stat-card"><div className="stat-top"><span>{label}</span><div className={`stat-icon ${tone}`}><Icon size={17} /></div></div><div className="stat-value">{value}</div><div className={`stat-change ${warning ? 'warning' : ''}`}><span className="change-indicator">{warning ? '!' : '↗'}</span>{change}</div></div>; }
-function StockStatus({ product }) { const status = product.quantity === 0 ? 'Out of stock' : product.quantity <= product.minimum ? 'Low stock' : 'In stock'; return <span className={`status-pill ${status.toLowerCase().replaceAll(' ', '-')}`}><i />{status}</span>; }
+function StockStatus({ product }) { const quantity = stockTotal(product); const status = quantity === 0 ? 'Out of stock' : quantity <= product.minimum ? 'Low stock' : 'In stock'; return <span className={`status-pill ${status.toLowerCase().replaceAll(' ', '-')}`}><i />{status}</span>; }
 function QuickAction({ icon: Icon, label, tone, onClick }) { return <button className="quick-action" onClick={onClick}><span className={`quick-icon ${tone}`}><Icon size={16} /></span>{label}<ArrowRight size={14} className="quick-arrow" /></button>; }
+function updateLocationStock(product, location, quantity) {
+  const row = product.stockByLocation.find((stock) => stock.location === location);
+  if (row) row.quantity = quantity;
+  else product.stockByLocation.push({ location, quantity });
+}
 
-function OperationModal({ type, products, onClose, onSubmit }) {
+function OperationModal({ type, products, locations, onClose, onSubmit }) {
   const isProduct = type === 'product';
   const [form, setForm] = useState({ type: type === 'operation' ? 'Receipt' : type, productId: products[0]?.id || '', quantity: '', location: products[0]?.location || 'Main Warehouse', toLocation: 'Production Floor', reference: '' });
   const update = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const selectedProduct = products.find((product) => product.id === form.productId) || products[0];
+  const sourceLocations = form.type === 'Receipt' ? locations : productLocations(selectedProduct);
+  const destinationLocations = locations.filter((location) => location !== form.location);
   const submit = (event) => { event.preventDefault(); onSubmit(form); };
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="modal" onSubmit={submit}>
     <div className="modal-heading"><div><span className="modal-icon"><Package size={17} /></span><div><h2>{isProduct ? 'Add a product' : `New ${form.type.toLowerCase()}`}</h2><p>{isProduct ? 'Add a product to your inventory catalog.' : 'Record a stock movement in your ledger.'}</p></div></div><button type="button" className="icon-button" onClick={onClose}><X size={18} /></button></div>
@@ -175,11 +194,11 @@ function OperationModal({ type, products, onClose, onSubmit }) {
       <label>Location<select value={form.location || 'Main Warehouse'} onChange={update('location')}><option>Main Warehouse</option><option>Production Floor</option><option>Warehouse 2</option><option>Rack A</option></select></label>
       <input type="hidden" value={form.minimum || '20'} onChange={update('minimum')} />
     </> : <>
-      <div className="form-row"><label>Operation type<select value={form.type} onChange={update('type')}><option>Receipt</option><option>Delivery</option><option>Transfer</option><option>Adjustment</option></select></label><label>Product<select value={form.productId} onChange={update('productId')}>{products.map((product) => <option value={product.id} key={product.id}>{product.name} · {product.sku}</option>)}</select></label></div>
-      <div className="form-row"><label>{form.type === 'Adjustment' ? 'Counted quantity' : 'Quantity'}<input type="number" min="0.01" step="any" required placeholder="Enter quantity" value={form.quantity} onChange={update('quantity')} /></label><label>Reference<input placeholder="Optional reference" value={form.reference} onChange={update('reference')} /></label></div>
-      <div className="form-row"><label>{form.type === 'Delivery' ? 'Source location' : 'Location'}<select value={form.location} onChange={update('location')}><option>Main Warehouse</option><option>Production Floor</option><option>Warehouse 2</option><option>Rack A</option></select></label>{form.type === 'Transfer' && <label>Destination<select value={form.toLocation} onChange={update('toLocation')}><option>Production Floor</option><option>Main Warehouse</option><option>Warehouse 2</option><option>Rack A</option></select></label>}</div>
-      {form.type === 'Transfer' && <p className="modal-hint"><ArrowLeftRight size={14} />Stock stays in the company total; its location changes.</p>}
-      {form.type === 'Adjustment' && <p className="modal-hint"><Clock3 size={14} />This prototype records the count for the ledger. Variance posting is a follow-up workflow.</p>}
+      <div className="form-row"><label>Operation type<select value={form.type} onChange={update('type')}><option>Receipt</option><option>Delivery</option><option>Transfer</option><option>Adjustment</option></select></label><label>Product<select value={form.productId} onChange={(event) => { const product = products.find((item) => item.id === event.target.value); setForm((current) => ({ ...current, productId: event.target.value, location: productLocations(product)[0] || locations[0] })); }}>{products.map((product) => <option value={product.id} key={product.id}>{product.name} · {product.sku}</option>)}</select></label></div>
+      <div className="form-row"><label>{form.type === 'Adjustment' ? 'Counted quantity' : 'Quantity'}<input type="number" min={form.type === 'Adjustment' ? '0' : '0.01'} step="any" required placeholder="Enter quantity" value={form.quantity} onChange={update('quantity')} /></label><label>Reference<input placeholder="Optional reference" value={form.reference} onChange={update('reference')} /></label></div>
+      <div className="form-row"><label>{form.type === 'Delivery' || form.type === 'Transfer' ? 'Source location' : 'Location'}<select value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value, toLocation: locations.find((location) => location !== event.target.value) || event.target.value }))}>{sourceLocations.map((location) => <option key={location}>{location}</option>)}</select><small className="stock-available">Available here: {money(stockAt(selectedProduct, form.location))} {selectedProduct?.unit}</small></label>{form.type === 'Transfer' && <label>Destination<select value={form.toLocation} onChange={update('toLocation')}>{destinationLocations.map((location) => <option key={location}>{location}</option>)}</select></label>}</div>
+      {form.type === 'Transfer' && <p className="modal-hint"><ArrowLeftRight size={14} />Quantity moves from the source balance to the destination balance.</p>}
+      {form.type === 'Adjustment' && <p className="modal-hint"><Clock3 size={14} />Set the physical count for this location; the ledger records the correction.</p>}
     </>}
     <div className="modal-actions"><button type="button" className="button button-secondary" onClick={onClose}>Cancel</button><button type="submit" className="button button-primary">{isProduct ? 'Add product' : 'Record movement'}<ArrowRight size={15} /></button></div>
   </form></div>;

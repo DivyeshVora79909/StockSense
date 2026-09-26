@@ -17,8 +17,13 @@ const starter = {
 };
 
 export const inventory = (() => {
-  try { return JSON.parse(localStorage.getItem('stocksense-inventory')) || starter; }
-  catch { return starter; }
+  try {
+    const saved = JSON.parse(localStorage.getItem('stocksense-inventory')) || starter;
+    return { ...saved, products: saved.products.map((product) => ({
+      ...product,
+      stockByLocation: product.stockByLocation || [{ location: product.location || 'Main Warehouse', quantity: Number(product.quantity || 0) }],
+    })) };
+  } catch { return { ...starter, products: starter.products.map((product) => ({ ...product, stockByLocation: [{ location: product.location, quantity: product.quantity }] })) }; }
 })();
 
 export function saveInventory(value) {
