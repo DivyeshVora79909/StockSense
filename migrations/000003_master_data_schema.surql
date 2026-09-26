@@ -20,7 +20,7 @@ DEFINE INDEX warehouse_code_unique ON TABLE warehouse FIELDS code UNIQUE;
 
 DEFINE TABLE location SCHEMAFULL;
 
-DEFINE FIELD warehouse ON TABLE location TYPE record<warehouse>;
+DEFINE FIELD warehouse ON TABLE location TYPE option<record<warehouse>>;
 DEFINE FIELD location_type ON TABLE location TYPE record<location_type>;
 DEFINE FIELD code ON TABLE location TYPE string ASSERT $value != "";
 DEFINE FIELD name ON TABLE location TYPE string ASSERT $value != "";
@@ -48,6 +48,8 @@ DEFINE FIELD name ON TABLE product TYPE string ASSERT $value != "";
 DEFINE FIELD category ON TABLE product TYPE record<product_category>;
 DEFINE FIELD uom ON TABLE product TYPE record<unit_of_measure>;
 DEFINE FIELD description ON TABLE product TYPE option<string>;
+DEFINE FIELD initial_qty ON TABLE product TYPE decimal VALUE 0 ASSERT $value >= 0;
+DEFINE FIELD initial_location ON TABLE product TYPE option<record<location>>;
 DEFINE FIELD is_active ON TABLE product TYPE bool VALUE true;
 DEFINE FIELD created_at ON TABLE product TYPE datetime VALUE time::now();
 
