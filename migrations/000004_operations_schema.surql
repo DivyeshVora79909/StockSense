@@ -30,7 +30,7 @@ DEFINE TABLE receipt_line SCHEMAFULL;
 DEFINE FIELD receipt ON TABLE receipt_line TYPE record<receipt>;
 DEFINE FIELD product ON TABLE receipt_line TYPE record<product>;
 DEFINE FIELD qty_expected ON TABLE receipt_line TYPE decimal ASSERT $value > 0;
-DEFINE FIELD qty_received ON TABLE receipt_line TYPE decimal VALUE 0 ASSERT $value >= 0;
+DEFINE FIELD qty_received ON TABLE receipt_line TYPE decimal VALUE 0 ASSERT $value >= 0 AND $value <= qty_expected;
 
 DEFINE INDEX receipt_line_receipt_product_unique ON TABLE receipt_line FIELDS receipt, product UNIQUE;
 DEFINE INDEX receipt_line_receipt_idx ON TABLE receipt_line FIELDS receipt;
@@ -63,7 +63,7 @@ DEFINE FIELD delivery_order ON TABLE delivery_line TYPE record<delivery_order>;
 DEFINE FIELD product ON TABLE delivery_line TYPE record<product>;
 DEFINE FIELD qty_ordered ON TABLE delivery_line TYPE decimal ASSERT $value > 0;
 DEFINE FIELD qty_reserved ON TABLE delivery_line TYPE decimal VALUE 0 ASSERT $value >= 0;
-DEFINE FIELD qty_done ON TABLE delivery_line TYPE decimal VALUE 0 ASSERT $value >= 0 AND $value <= qty_ordered;
+DEFINE FIELD qty_done ON TABLE delivery_line TYPE decimal VALUE 0 ASSERT $value >= 0;
 
 DEFINE INDEX delivery_line_order_product_unique ON TABLE delivery_line FIELDS delivery_order, product UNIQUE;
 DEFINE INDEX delivery_line_order_idx ON TABLE delivery_line FIELDS delivery_order;
@@ -78,7 +78,6 @@ DEFINE TABLE internal_transfer SCHEMAFULL;
 DEFINE FIELD number ON TABLE internal_transfer TYPE string ASSERT $value != "";
 DEFINE FIELD source_location ON TABLE internal_transfer TYPE record<location>;
 DEFINE FIELD destination_location ON TABLE internal_transfer TYPE record<location>;
-DEFINE FIELD locations_differ ON TABLE internal_transfer TYPE bool VALUE $this.source_location != $this.destination_location ASSERT $value;
 DEFINE FIELD status ON TABLE internal_transfer TYPE record<document_status>;
 DEFINE FIELD created_by ON TABLE internal_transfer TYPE record<user>;
 DEFINE FIELD scheduled_at ON TABLE internal_transfer TYPE option<datetime>;
@@ -96,7 +95,7 @@ DEFINE TABLE transfer_line SCHEMAFULL;
 DEFINE FIELD internal_transfer ON TABLE transfer_line TYPE record<internal_transfer>;
 DEFINE FIELD product ON TABLE transfer_line TYPE record<product>;
 DEFINE FIELD qty_requested ON TABLE transfer_line TYPE decimal ASSERT $value > 0;
-DEFINE FIELD qty_moved ON TABLE transfer_line TYPE decimal VALUE 0 ASSERT $value >= 0 AND $value <= qty_requested;
+DEFINE FIELD qty_moved ON TABLE transfer_line TYPE decimal VALUE 0 ASSERT $value >= 0;
 
 DEFINE INDEX transfer_line_transfer_product_unique ON TABLE transfer_line FIELDS internal_transfer, product UNIQUE;
 DEFINE INDEX transfer_line_transfer_idx ON TABLE transfer_line FIELDS internal_transfer;

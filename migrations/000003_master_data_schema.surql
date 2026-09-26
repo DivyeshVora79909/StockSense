@@ -48,14 +48,14 @@ DEFINE FIELD name ON TABLE product TYPE string ASSERT $value != "";
 DEFINE FIELD category ON TABLE product TYPE record<product_category>;
 DEFINE FIELD uom ON TABLE product TYPE record<unit_of_measure>;
 DEFINE FIELD description ON TABLE product TYPE option<string>;
-DEFINE FIELD initial_qty ON TABLE product TYPE decimal VALUE 0 ASSERT $value >= 0;
-DEFINE FIELD initial_location ON TABLE product TYPE option<record<location>>;
+DEFINE FIELD opening_stock_location ON TABLE product TYPE option<record<location>>;
 DEFINE FIELD is_active ON TABLE product TYPE bool VALUE true;
 DEFINE FIELD created_at ON TABLE product TYPE datetime VALUE time::now();
 
 DEFINE INDEX product_sku_unique ON TABLE product FIELDS sku UNIQUE;
 DEFINE INDEX product_category_idx ON TABLE product FIELDS category;
 DEFINE INDEX product_uom_idx ON TABLE product FIELDS uom;
+DEFINE INDEX product_name_search ON TABLE product FIELDS name SEARCH ANALYZER ascii BM25;
 
 --------------------------------------------------------------------
 -- Suppliers and customers
@@ -87,6 +87,7 @@ DEFINE FIELD min_qty ON TABLE reorder_rule TYPE decimal VALUE 0 ASSERT $value >=
 DEFINE FIELD reorder_qty ON TABLE reorder_rule TYPE decimal VALUE 0 ASSERT $value >= 0;
 DEFINE FIELD max_qty ON TABLE reorder_rule TYPE decimal VALUE 0 ASSERT $value >= 0;
 DEFINE FIELD lead_time_days ON TABLE reorder_rule TYPE int VALUE 0 ASSERT $value >= 0;
+DEFINE FIELD quantity_limits_valid ON TABLE reorder_rule TYPE bool VALUE ($this.max_qty = 0 OR $this.max_qty >= $this.min_qty) ASSERT $value;
 DEFINE FIELD created_at ON TABLE reorder_rule TYPE datetime VALUE time::now();
 
 DEFINE INDEX reorder_rule_product_location_unique ON TABLE reorder_rule FIELDS product, location UNIQUE;

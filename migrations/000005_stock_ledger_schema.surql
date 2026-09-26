@@ -29,7 +29,6 @@ DEFINE FIELD move_at ON TABLE stock_move TYPE datetime VALUE time::now();
 DEFINE FIELD product ON TABLE stock_move TYPE record<product>;
 DEFINE FIELD source_location ON TABLE stock_move TYPE option<record<location>>;
 DEFINE FIELD destination_location ON TABLE stock_move TYPE option<record<location>>;
-DEFINE FIELD locations_differ ON TABLE stock_move TYPE bool VALUE $this.source_location != $this.destination_location ASSERT $value;
 DEFINE FIELD qty ON TABLE stock_move TYPE decimal ASSERT $value > 0;
 DEFINE FIELD move_type ON TABLE stock_move TYPE record<move_type>;
 DEFINE FIELD reference_type ON TABLE stock_move TYPE record<reference_type>;
@@ -60,7 +59,6 @@ DEFINE FIELD product ON TABLE stock_balance TYPE record<product>;
 DEFINE FIELD location ON TABLE stock_balance TYPE record<location>;
 DEFINE FIELD qty_on_hand ON TABLE stock_balance TYPE decimal VALUE 0 ASSERT $value >= 0;
 DEFINE FIELD qty_reserved ON TABLE stock_balance TYPE decimal VALUE 0 ASSERT $value >= 0;
-DEFINE FIELD reservation_fits_stock ON TABLE stock_balance TYPE bool VALUE $this.qty_reserved <= $this.qty_on_hand ASSERT $value;
 DEFINE FIELD updated_at ON TABLE stock_balance TYPE datetime VALUE time::now();
 
 DEFINE INDEX stock_balance_product_location_unique ON TABLE stock_balance FIELDS product, location UNIQUE;
