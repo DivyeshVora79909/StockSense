@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f6f8" />
+    <title>StockSense · Inventory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js"></script>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900">
+    <main id="auth-view" class="min-h-screen grid place-items-center p-5">
+      <section class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div class="mb-7 flex items-center gap-3"><span class="brand-mark"><i data-lucide="boxes"></i></span><div><h1 class="text-xl font-semibold">StockSense</h1><p class="text-sm text-slate-500">Inventory, in one place.</p></div></div>
+        <div id="auth-notice" class="mb-4 hidden rounded-lg bg-blue-50 p-3 text-sm text-blue-800"></div>
+        <div id="auth-error" class="mb-4 hidden rounded-lg bg-rose-50 p-3 text-sm text-rose-700"></div>
+        <div class="mb-5 flex gap-2"><button class="auth-tab active" data-auth-tab="login">Log in</button><button class="auth-tab" data-auth-tab="signup">Create account</button><button class="auth-tab" data-auth-tab="reset">Reset password</button></div>
+        <form id="login-form" class="auth-form space-y-4">
+          <label class="field">Username or email<input name="identifier" autocomplete="username" required /></label>
+          <label class="field">Password<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary w-full">Log in</button>
+        </form>
+        <form id="signup-form" class="auth-form hidden space-y-4">
+          <label class="field">Your name<input name="name" required /></label>
+          <label class="field">Company / workspace<input name="workspace" required /></label>
+          <label class="field">Login ID <span class="hint">9–32 letters, numbers, dots, dashes or underscores</span><input name="identifier" minlength="9" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{8,31}" required /></label>
+          <label class="field">Email<input name="email" type="email" required /></label>
+          <label class="field">Password<input name="password" type="password" minlength="8" autocomplete="new-password" required /></label>
+          <button class="primary w-full">Create account</button>
+        </form>
+        <form id="verify-form" class="auth-form hidden space-y-4">
+          <p class="text-sm text-slate-600">Enter the six-digit code sent to your email to verify your account.</p>
+          <label class="field">Email<input name="identifier" type="email" required /></label>
+          <label class="field">Verification code<input name="code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required /></label>
+          <button class="primary w-full">Verify and continue</button>
+          <button class="quiet w-full" type="button" id="resend-code">Resend code</button>
+        </form>
+        <form id="reset-form" class="auth-form hidden space-y-4">
+          <label class="field">Account email<input name="identifier" type="email" required /></label>
+          <button class="secondary w-full">Send reset code</button>
+          <label class="field">Six-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" /></label>
+          <label class="field">New password<input name="new_password" type="password" minlength="8" autocomplete="new-password" /></label>
+          <button class="primary w-full">Reset password</button>
+        </form>
+      </section>
+    </main>
+
+    <div id="app-view" class="hidden min-h-screen">
+      <aside id="sidebar" class="sidebar">
+        <div class="flex items-center gap-3 px-5 py-6"><span class="brand-mark small"><i data-lucide="boxes"></i></span><span class="font-semibold tracking-tight">StockSense</span></div>
+        <div class="px-3 pb-3"><div id="workspace-name" class="workspace-label">Workspace</div></div>
+        <nav id="navigation" class="space-y-1 px-3">
+          <button data-page="dashboard" class="nav-item active"><i data-lucide="layout-dashboard"></i>Dashboard</button>
+          <button data-page="products" class="nav-item"><i data-lucide="package"></i>Products</button>
+          <div class="nav-caption">OPERATIONS</div>
+          <button data-page="receipts" class="nav-item"><i data-lucide="package-check"></i>Receipts</button>
+          <button data-page="deliveries" class="nav-item"><i data-lucide="truck"></i>Deliveries</button>
+          <button data-page="transfers" class="nav-item"><i data-lucide="arrow-left-right"></i>Internal transfers</button>
+          <button data-page="adjustments" class="nav-item"><i data-lucide="clipboard-check"></i>Adjustments</button>
+          <button data-page="history" class="nav-item"><i data-lucide="history"></i>Move history</button>
+          <div class="nav-caption">SETTINGS</div>
+          <button data-page="locations" class="nav-item"><i data-lucide="warehouse"></i>Warehouses & locations</button>
+        </nav>
+        <div class="sidebar-footer"><button id="profile-button" class="profile-button"><span class="avatar">SS</span><span class="min-w-0 flex-1 text-left"><b id="profile-name" class="block truncate">Profile</b><small class="block truncate text-slate-500">My profile</small></span><i data-lucide="chevron-down"></i></button><button id="logout-button" class="nav-item mt-2"><i data-lucide="log-out"></i>Log out</button></div>
+      </aside>
+      <section class="main-shell">
+        <header class="topbar"><div><p class="eyebrow">INVENTORY WORKSPACE</p><h1 id="page-title" class="text-xl font-semibold">Dashboard</h1></div><div class="flex items-center gap-3"><span id="sync-state" class="sync-state">Connected</span><button id="quick-create" class="primary"><i data-lucide="plus"></i> New operation</button></div></header>
+        <div id="page-content" class="page-content"></div>
+      </section>
+    </div>
+
+    <dialog id="operation-dialog" class="modal">
+      <form id="operation-form" method="dialog" class="modal-card">
+        <div class="modal-heading"><div><p class="eyebrow">INVENTORY DOCUMENT</p><h2 id="operation-heading" class="text-xl font-semibold">New receipt</h2></div><button type="button" class="icon-button" data-close-dialog><i data-lucide="x"></i></button></div>
+        <input name="id" type="hidden" />
+        <div class="form-grid">
+          <label class="field">Document type<select name="kind" required><option value="receipt">Receipt</option><option value="delivery">Delivery</option><option value="transfer">Internal transfer</option><option value="adjustment">Inventory adjustment</option></select></label>
+          <label class="field">Reference<input name="reference" placeholder="Optional reference" /></label>
+          <label class="field party-field">Supplier / customer<input name="party_name" placeholder="Optional" /></label>
+          <label class="field location-field">Location<select name="location"></select></label>
+          <label class="field from-location-field hidden">From location<select name="from_location"></select></label>
+          <label class="field to-location-field hidden">To location<select name="to_location"></select></label>
+          <label class="field">Operation date<input name="effective_at" type="datetime-local" required /></label>
+        </div>
+        <div class="mt-6 flex items-center justify-between"><div><h3 class="font-medium">Products</h3><p class="text-xs text-slate-500">One product per line for stock counts.</p></div><button type="button" id="add-line" class="secondary small-button"><i data-lucide="plus"></i> Add line</button></div>
+        <div class="line-head"><span>Product</span><span id="quantity-heading">Quantity</span><span></span></div>
+        <div id="operation-lines" class="space-y-2"></div>
+        <div id="operation-error" class="hidden mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700"></div>
+        <div class="modal-actions"><button type="button" class="quiet" data-close-dialog>Cancel</button><div class="flex gap-2"><button type="button" id="save-draft" class="secondary">Save draft</button><button type="submit" id="save-operation" class="primary">Save</button></div></div>
+      </form>
+    </dialog>
+    <dialog id="simple-dialog" class="modal"><form id="simple-form" method="dialog" class="modal-card"><div class="modal-heading"><h2 id="simple-heading" class="text-xl font-semibold"></h2><button type="button" class="icon-button" data-close-dialog><i data-lucide="x"></i></button></div><div id="simple-fields" class="form-grid"></div><div id="simple-error" class="hidden mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700"></div><div class="modal-actions"><button type="button" class="quiet" data-close-dialog>Cancel</button><button type="submit" class="primary">Save</button></div></form></dialog>
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,2 @@
+#V2
+DEFINE NAMESPACE IF NOT EXISTS stocksense; USE NS stocksense; DEFINE DATABASE IF NOT EXISTS stocksense;
