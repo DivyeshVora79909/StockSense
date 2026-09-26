@@ -20,12 +20,19 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [database, setDatabase] = useState(null);
   const [showRestockAlert, setShowRestockAlert] = useState(true);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyType, setHistoryType] = useState('All types');
   const totalUnits = products.reduce((sum, product) => sum + product.quantity, 0);
   const lowStock = products.filter((product) => product.quantity <= product.minimum).length;
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesQuery = `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase());
     return matchesQuery && (filter === 'All products' || (filter === 'Low stock' ? product.quantity <= product.minimum : product.category === filter));
   }), [products, query, filter]);
+  const visibleMoves = useMemo(() => moves.filter((move) => {
+    const matchesType = historyType === 'All types' || move.type === historyType;
+    const matchesQuery = `${move.product} ${move.sku} ${move.reference} ${move.location} ${move.toLocation || ''}`.toLowerCase().includes(historyQuery.toLowerCase());
+    return matchesType && matchesQuery;
+  }), [moves, historyType, historyQuery]);
 
   useEffect(() => {
     let active = true;
@@ -62,7 +69,7 @@ export default function App() {
     }
     const move = {
       id: `MV-${Date.now().toString().slice(-6)}`, type: operation.type, product: product.name,
-      sku: product.sku, quantity: qty, location: operation.type === 'Transfer' ? (operation.toLocation || product.location) : (operation.location || product.location),
+      sku: product.sku, quantity: qty, sourceLocation: operation.location || product.location, location: operation.type === 'Transfer' ? (operation.toLocation || product.location) : (operation.location || product.location),
       toLocation: operation.toLocation || '', reference: operation.reference || `${operation.type.toUpperCase()}-${Date.now().toString().slice(-4)}`,
       time: 'Just now', status: 'Done',
     };
@@ -87,7 +94,7 @@ export default function App() {
         <button className="nav-item active"><LayoutDashboard size={17} />Dashboard</button>
         <button className="nav-item" onClick={() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })}><Package size={17} />Products<span className="nav-count">{products.length}</span></button>
         <button className="nav-item" onClick={() => setModal('operation')}><ArrowLeftRight size={17} />Operations</button>
-        <button className="nav-item" onClick={() => setFilter('All products')}><Activity size={17} />Move history</button>
+        <button className="nav-item" onClick={() => document.getElementById('move-history')?.scrollIntoView({ behavior: 'smooth' })}><Activity size={17} />Move history</button>
       </nav>
       <div className="nav-label nav-label-spaced">MANAGE</div>
       <nav className="nav-list">
@@ -135,6 +142,11 @@ export default function App() {
           </div>
         </section>
         <section className="quick-actions"><div><span className="quick-kicker">QUICK ACTIONS</span><strong>What would you like to do?</strong></div><div className="quick-action-buttons"><QuickAction icon={ArrowDownLeft} label="Receive stock" tone="green" onClick={() => setModal('Receipt')} /><QuickAction icon={ArrowUpRight} label="Deliver order" tone="orange" onClick={() => setModal('Delivery')} /><QuickAction icon={ArrowLeftRight} label="Transfer stock" tone="blue" onClick={() => setModal('Transfer')} /><QuickAction icon={SlidersHorizontal} label="Adjust inventory" tone="purple" onClick={() => setModal('Adjustment')} /></div></section>
+        <section className="panel history-panel" id="move-history">
+          <div className="panel-heading"><div><h2>Move history</h2><p>Search and review stock changes across your inventory.</p></div><span className="history-count">{visibleMoves.length} movements</span></div>
+          <div className="history-toolbar"><div className="search-box"><Search size={15} /><input placeholder="Search product, SKU, reference, or location..." value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} />{historyQuery && <button className="search-clear" aria-label="Clear history search" onClick={() => setHistoryQuery('')}><X size={13} /></button>}</div><select aria-label="Filter movement type" value={historyType} onChange={(event) => setHistoryType(event.target.value)}><option>All types</option><option>Receipt</option><option>Delivery</option><option>Transfer</option><option>Adjustment</option></select></div>
+          <div className="history-table-wrap"><table className="history-table"><thead><tr><th>TYPE</th><th>PRODUCT</th><th>REFERENCE</th><th>LOCATION</th><th>QUANTITY</th><th>WHEN</th></tr></thead><tbody>{visibleMoves.map((move) => { const MoveIcon = iconByType[move.type] || Activity; return <tr key={move.id}><td><span className={`history-type ${move.type.toLowerCase()}`}><MoveIcon size={13} />{move.type}</span></td><td><strong>{move.product}</strong><span className="history-sku">{move.sku}</span></td><td className="muted-cell">{move.reference}</td><td><span className="history-location">{move.type === 'Transfer' ? `${move.sourceLocation || move.location} → ${move.toLocation || move.location}` : move.location}</span></td><td><strong className={move.type === 'Receipt' ? 'qty-positive' : move.type === 'Delivery' ? 'qty-negative' : ''}>{move.type === 'Receipt' ? '+' : move.type === 'Delivery' ? '−' : ''}{money(move.quantity)}</strong><span className="uom"> {products.find((product) => product.name === move.product)?.unit || 'units'}</span></td><td className="history-time">{move.time}</td></tr>; })}</tbody></table>{visibleMoves.length === 0 && <div className="empty-state">No stock movements match these filters.</div>}</div>
+        </section>
         <footer className="page-footer"><span>StockSense <span className="footer-dot">●</span> Inventory made clear.</span><span><span className="footer-live"><i />All systems operational</span><span className="footer-separator">·</span>Last synced just now</span></footer>
       </div>
     </main>

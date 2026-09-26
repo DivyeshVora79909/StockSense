@@ -44,8 +44,10 @@ export async function loadInventory() {
       };
     }),
     moves: moveRows.map((move) => ({
-      id: move.id, type: move.move_type?.id || 'Adjustment', product: move.product?.id || 'Product',
-      sku: '', quantity: Number(move.qty || 0), location: move.source_location?.id || move.destination_location?.id || 'Location',
+      id: move.id, type: move.move_type?.name || move.move_type?.id || 'Adjustment', product: move.product?.name || move.product?.id || 'Product',
+      sku: move.product?.sku || '', quantity: Number(move.qty || 0), sourceLocation: move.source_location?.name || move.source_location?.id || '',
+      location: move.destination_location?.name || move.destination_location?.id || move.source_location?.name || move.source_location?.id || 'Location',
+      toLocation: move.destination_location?.name || move.destination_location?.id || '',
       reference: move.reference?.id || 'Stock movement', time: new Date(move.move_at).toLocaleString(), status: 'Done',
     })),
   };

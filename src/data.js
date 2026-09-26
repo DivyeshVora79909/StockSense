@@ -10,7 +10,7 @@ const starter = {
   moves: [
     { id: 'm1', type: 'Receipt', product: 'Steel Rods', sku: 'STL-001', quantity: 250, location: 'Main Warehouse', reference: 'PO-2024-084', time: '12 min ago', status: 'Done' },
     { id: 'm2', type: 'Delivery', product: 'Chair Frames', sku: 'FR-203', quantity: 24, location: 'Production Floor', reference: 'SO-2024-219', time: '48 min ago', status: 'Done' },
-    { id: 'm3', type: 'Transfer', product: 'Oak Panels', sku: 'WD-014', quantity: 30, location: 'Warehouse 2', toLocation: 'Production Floor', reference: 'TR-2024-031', time: '2 hrs ago', status: 'Done' },
+    { id: 'm3', type: 'Transfer', product: 'Oak Panels', sku: 'WD-014', quantity: 30, sourceLocation: 'Warehouse 2', location: 'Production Floor', toLocation: 'Production Floor', reference: 'TR-2024-031', time: '2 hrs ago', status: 'Done' },
     { id: 'm4', type: 'Adjustment', product: 'Brass Hinges', sku: 'HW-008', quantity: 2, location: 'Rack A', reference: 'ADJ-2024-012', time: 'Yesterday', status: 'Done' },
     { id: 'm5', type: 'Receipt', product: 'Shipping Boxes', sku: 'PK-031', quantity: 100, location: 'Main Warehouse', reference: 'PO-2024-080', time: 'Yesterday', status: 'Done' },
   ],
