@@ -100,7 +100,7 @@ async function startDatabase() {
   }
   fs.mkdirSync(path.join(root, ".data"), { recursive: true });
   databaseProcess = spawn(surreal, ["start", "--bind", `${host}:${dbPort}`,
-    "--allow-net=api.brevo.com:443", `surrealkv://${path.join(root, ".data", "stocksense.db")}`], {
+    "--allow-net=api.brevo.com", `surrealkv://${path.join(root, ".data", "stocksense.db")}`], {
     cwd: root, env: { ...process.env, SURREAL_USER: user, SURREAL_PASS: password },
     stdio: ["ignore", "ignore", "pipe"],
   });

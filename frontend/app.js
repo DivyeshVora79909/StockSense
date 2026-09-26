@@ -50,55 +50,97 @@ async function connect() {
     await state.db.use({ namespace: state.config.namespace, database: state.config.database });
   }
 }
-function busy(form, yes) { const button = $("button[type=submit]", form); if (button) { button.disabled = yes; button.classList.toggle("opacity-60", yes); } }
+function busy(form, yes) { const button = $("button[type=submit], button:not([type])", form); if (button) { button.disabled = yes; button.classList.toggle("opacity-60", yes); } }
+function passwordsMatch(form, passwordName = "password") {
+  const password = form.elements[passwordName];
+  const confirmation = form.elements.confirm_password;
+  confirmation.setCustomValidity(password.value === confirmation.value ? "" : "Passwords do not match.");
+  return confirmation.reportValidity();
+}
+function formError(error, fallback) {
+  const message = error?.message || "";
+  if (/record access signup query failed/i.test(message)) return "Account creation failed while sending the verification email. Please try again shortly.";
+  if (/authentication failed|no record was returned/i.test(message)) return fallback;
+  return message || fallback;
+}
+let loginIdSuffix = "";
+function generateLoginId(newSuffix = false) {
+  const form = $("#signup-form");
+  if (newSuffix || !loginIdSuffix) loginIdSuffix = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+  const base = form.elements.name.value.normalize("NFKD").toLowerCase()
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "").slice(0, 23) || "user";
+  form.elements.identifier.value = `${base}.${loginIdSuffix}`;
+}
 
 async function onLogin(event) {
   event.preventDefault(); const form = event.currentTarget; busy(form, true); authMessage();
   try {
     await connect(); const data = new FormData(form);
-    await state.db.signin({ access: "account_password", variables: { identifier: data.get("identifier"), password: data.get("password") } });
+    await state.db.signin({ access: "account_password", variables: { identifier: String(data.get("identifier")).trim(), password: data.get("password") } });
     await showApp();
-  } catch (error) { authMessage(error.message || "Login failed. Check your username and password.", true); }
+  } catch (error) { authMessage(formError(error, "Login failed. Check your username or email and password."), true); }
   finally { busy(form, false); }
 }
 async function onSignup(event) {
   event.preventDefault(); const form = event.currentTarget; busy(form, true); authMessage();
   try {
+    generateLoginId();
+    if (!passwordsMatch(form)) return;
+    for (const name of ["name", "workspace"]) {
+      const field = form.elements[name];
+      field.setCustomValidity(field.value.trim() ? "" : "Enter a value, not only spaces.");
+      if (!field.reportValidity()) return;
+    }
     await connect(); const data = new FormData(form); const identifier = String(data.get("identifier")).trim().toLowerCase();
     await state.db.signup({ access: "stocksense_signup", variables: {
-      identifier, email: data.get("email"), name: data.get("name"), workspace: data.get("workspace"), password: data.get("password"),
+      identifier, email: String(data.get("email")).trim().toLowerCase(), name: String(data.get("name")).trim(),
+      workspace: String(data.get("workspace")).trim(), password: data.get("password"),
     } });
     await state.db.close(); state.db = null;
-    localStorage.setItem("stocksense.pending", JSON.stringify({ identifier, email: data.get("email"), name: data.get("name") }));
-    $("#verify-form [name=identifier]").value = data.get("email"); switchAuth("verify");
+    const email = String(data.get("email")).trim().toLowerCase();
+    localStorage.setItem("stocksense.pending", JSON.stringify({ identifier, email, name: data.get("name") }));
+    $("#verify-form [name=identifier]").value = email; switchAuth("verify");
     authMessage("Account created. Check your email for the verification code.");
-  } catch (error) { authMessage(error.message || "Account could not be created.", true); }
+  } catch (error) { authMessage(formError(error, "Account could not be created. Check your details or try a different login ID and email."), true); }
   finally { busy(form, false); }
 }
 async function onVerify(event) {
   event.preventDefault(); const form = event.currentTarget; busy(form, true); authMessage();
   try {
     await connect(); const data = new FormData(form);
-    await state.db.signin({ access: "account_code", variables: { identifier: data.get("identifier"), code: data.get("code"), password_action: "keep" } });
+    await state.db.signin({ access: "account_code", variables: { identifier: String(data.get("identifier")).trim().toLowerCase(), code: String(data.get("code")).trim(), password_action: "keep" } });
     localStorage.removeItem("stocksense.pending"); await showApp();
-  } catch (error) { authMessage(error.message || "Code verification failed.", true); }
+  } catch (error) { authMessage(formError(error, "Code verification failed. Check the six digits or request a new code."), true); }
   finally { busy(form, false); }
 }
-async function onReset(event) {
-  event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); busy(form, true); authMessage();
+async function requestRecoveryCode(identifier) {
+  await connect();
+  try { await state.db.signin({ access: "stocksense_recovery", variables: { identifier: identifier.trim().toLowerCase() } }); }
+  catch { /* Recovery never returns a session, including for an unknown email. */ }
+}
+async function sendResetCode() {
+  const form = $("#reset-form"), email = form.elements.identifier, button = $("#send-reset-code");
+  if (!email.reportValidity()) return;
+  button.disabled = true; authMessage();
   try {
-    await connect();
-    if (!data.get("code")) {
-      try { await state.db.signin({ access: "stocksense_recovery", variables: { identifier: data.get("identifier") } }); } catch {}
-      authMessage("If that email belongs to an account, a reset code has been sent. Check your inbox.");
-      $("#reset-form [name=code]").focus(); return;
-    }
+    await requestRecoveryCode(email.value);
+    authMessage("If that email belongs to an account, a reset code has been sent. Check your inbox.");
+    form.elements.code.focus();
+  } catch (error) { authMessage(formError(error, "Could not connect to the database. Try again."), true); }
+  finally { button.disabled = false; }
+}
+async function onReset(event) {
+  event.preventDefault(); const form = event.currentTarget; busy(form, true); authMessage();
+  try {
+    if (!passwordsMatch(form, "new_password")) return;
+    const data = new FormData(form); await connect();
     await state.db.signin({ access: "account_code", variables: {
-      identifier: data.get("identifier"), code: data.get("code"),
+      identifier: String(data.get("identifier")).trim().toLowerCase(), code: String(data.get("code")).trim(),
       password_action: "set", new_password: data.get("new_password"),
     } });
     await showApp();
-  } catch (error) { authMessage(error.message || "Password reset failed.", true); }
+  } catch (error) { authMessage(formError(error, "Password reset failed. Check the code and password, or request a new code."), true); }
   finally { busy(form, false); }
 }
 
@@ -189,7 +231,7 @@ function renderProducts() {
     const low = productBalance(product) <= Number(product.reorder_point || 0);
     return `<tr><td><strong>${escapeHtml(product.name)}</strong></td><td>${escapeHtml(product.sku)}</td><td>${escapeHtml(categoryById(product.category)?.name || "—")}</td><td>${escapeHtml(product.unit?.name || unitName(product.unit))}</td><td><span class="${low ? "text-amber-700 font-semibold" : "font-medium"}">${amount(productBalance(product), 3)}</span></td><td>${amount(product.reorder_point, 3)}</td><td><button class="action-link" data-edit-product="${escapeHtml(idText(product.id))}">Edit</button> <button class="action-link text-rose-700" data-delete-product="${escapeHtml(idText(product.id))}">Delete</button></td></tr>`;
   }).join("")}</tbody></table>${products.length ? "" : empty("No products match these filters.")}</div>`;
-  return `<div class="section-head mt-0"><div><h2>Product catalogue</h2><p class="small-muted mt-1">Stock is calculated from validated operations.</p></div><div class="flex gap-2"><button class="secondary" data-add-category><i data-lucide="tags"></i> Category</button><button class="primary" data-add-product><i data-lucide="plus"></i> Add product</button></div></div>${pageToolbar({ status: false, category: true })}${table}`;
+  return `<div class="section-head mt-0"><div><h2>Product catalogue</h2><p class="small-muted mt-1">Stock is calculated from validated operations.</p></div><div class="flex gap-2"><button class="secondary" data-add-unit><i data-lucide="ruler"></i> Unit</button><button class="secondary" data-add-category><i data-lucide="tags"></i> Category</button><button class="primary" data-add-product><i data-lucide="plus"></i> Add product</button></div></div>${pageToolbar({ status: false, category: true })}${table}`;
 }
 function renderOperations(kind) {
   const rows = filteredOperations(kind); const title = kindLabel[kind];
@@ -262,7 +304,8 @@ function openOperation(kind, row = null) {
   state.operationKind = row?.kind || kind; state.editingOperation = row;
   const form = $("#operation-form"); form.reset(); form.elements.id.value = row ? idText(row.id) : "";
   form.elements.kind.value = state.operationKind; form.elements.reference.value = row?.reference || ""; form.elements.party_name.value = row?.party_name || "";
-  form.elements.effective_at.value = row?.effective_at ? new Date(row.effective_at).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16);
+  const date = row?.effective_at ? new Date(row.effective_at) : new Date();
+  form.elements.effective_at.value = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   setSelectOptions(form.elements.location, state.locations, row?.location, "Select location");
   setSelectOptions(form.elements.from_location, state.locations, row?.from_location, "Select source");
   setSelectOptions(form.elements.to_location, state.locations, row?.to_location, "Select destination");
@@ -272,6 +315,12 @@ function openOperation(kind, row = null) {
 }
 function syncOperationVisibility() {
   const kind = $("#operation-form [name=kind]").value; state.operationKind = kind;
+  const form = $("#operation-form");
+  for (const name of ["location", "from_location", "to_location"]) {
+    const field = form.elements[name];
+    const active = name === "location" ? kind !== "transfer" : kind === "transfer";
+    field.required = active; field.disabled = !active;
+  }
   $(".location-field").classList.toggle("hidden", kind === "transfer"); $(".from-location-field").classList.toggle("hidden", kind !== "transfer");
   $(".to-location-field").classList.toggle("hidden", kind !== "transfer"); $(".party-field").classList.toggle("hidden", !["receipt", "delivery"].includes(kind));
   $("#quantity-heading").textContent = kind === "adjustment" ? "Counted quantity" : "Quantity";
@@ -303,7 +352,8 @@ function formOperationData(form) {
   }
   const locationValue = value => state.locations.find(x => idText(x.id) === value)?.id || null;
   return {
-    kind, reference: data.get("reference") || null, party_name: data.get("party_name") || null,
+    kind, reference: String(data.get("reference") || "").trim() || null,
+    party_name: String(data.get("party_name") || "").trim() || null,
     location: kind === "transfer" ? null : locationValue(data.get("location")),
     from_location: kind === "transfer" ? locationValue(data.get("from_location")) : null,
     to_location: kind === "transfer" ? locationValue(data.get("to_location")) : null,
@@ -313,20 +363,34 @@ function formOperationData(form) {
 async function saveOperation(event, finalStatus = "draft") {
   event?.preventDefault(); const form = $("#operation-form"); const errorNode = $("#operation-error"); errorNode.classList.add("hidden");
   try {
+    if (!form.reportValidity()) return;
     const data = formOperationData(form);
-    if (!data.lines.length || data.lines.some(line => !line.product || (line.quantity != null ? line.quantity <= 0 : line.counted_quantity < 0))) throw new Error("Add valid product lines before saving.");
+    if (!data.lines.length || data.lines.some(line => !line.product ||
+      !Number.isFinite(line.quantity ?? line.counted_quantity) ||
+      (line.quantity != null ? line.quantity <= 0 : line.counted_quantity < 0))) {
+      throw new Error("Add a product and a valid quantity on every line.");
+    }
+    if (data.kind === "adjustment" && new Set(data.lines.map(line => idText(line.product))).size !== data.lines.length) {
+      throw new Error("Each product can appear only once in a physical count.");
+    }
+    if (data.kind === "transfer" && idText(data.from_location) === idText(data.to_location)) {
+      throw new Error("Choose different source and destination locations.");
+    }
+    if (finalStatus === "done" && new Date(data.effective_at) > new Date()) {
+      throw new Error("A future-dated operation cannot be validated yet.");
+    }
     await ensureOperationPositions(data);
     const vars = { team: state.team, ...data, status: finalStatus };
     const old = state.editingOperation;
     if (old) {
-      await query(`UPDATE $id SET kind = $kind, reference = $reference, party_name = $party_name,
-        location = $location, from_location = $from_location, to_location = $to_location,
+      await query(`UPDATE $id SET kind = $kind, reference = $reference ?? NONE, party_name = $party_name ?? NONE,
+        location = $location ?? NONE, from_location = $from_location ?? NONE, to_location = $to_location ?? NONE,
         effective_at = type::datetime($effective_at), lines = $lines;`, { id: old.id, ...vars });
       if (finalStatus !== old.status) await query("UPDATE $id SET status = $status;", { id: old.id, status: finalStatus });
     } else {
       await query(`CREATE stock_operation CONTENT {
-        owned_by: $team, kind: $kind, status: $status, reference: $reference, party_name: $party_name,
-        location: $location, from_location: $from_location, to_location: $to_location,
+        owned_by: $team, kind: $kind, status: $status, reference: $reference ?? NONE, party_name: $party_name ?? NONE,
+        location: $location ?? NONE, from_location: $from_location ?? NONE, to_location: $to_location ?? NONE,
         effective_at: type::datetime($effective_at), lines: $lines
       };`, vars);
     }
@@ -338,23 +402,36 @@ function openSimple(title, fields, onSave) {
   const form = $("#simple-form"); form.reset(); $("#simple-heading").textContent = title; $("#simple-fields").innerHTML = fields;
   $("#simple-error").classList.add("hidden"); $("#simple-dialog").showModal();
   form.onsubmit = async event => { event.preventDefault(); const error = $("#simple-error");
+    if (!form.reportValidity()) return;
+    busy(form, true); error.classList.add("hidden");
     try { await onSave(new FormData(form)); $("#simple-dialog").close(); await refresh(); }
-    catch (exception) { error.textContent = exception.message; error.classList.remove("hidden"); }
+    catch (exception) { error.textContent = formError(exception, "Could not save. Check the fields and try again."); error.classList.remove("hidden"); }
+    finally { busy(form, false); }
   };
+  return form;
 }
 function openProduct(row = null) {
+  if (!state.units.length) { toast("Add a unit of measure before creating a product.", true); return; }
   const fields = `<label class="field">Product name<input name="name" value="${escapeHtml(row?.name || "")}" required></label><label class="field">SKU / code<input name="sku" value="${escapeHtml(row?.sku || "")}" ${row ? "readonly" : ""} required></label>
     <label class="field">Category<select name="category"><option value="">No category</option>${state.categories.map(x => `<option value="${escapeHtml(idText(x.id))}" ${idText(row?.category) === idText(x.id) ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}</select></label>
     <label class="field">Unit<select name="unit" ${row ? "disabled" : ""} required>${state.units.map(x => `<option value="${escapeHtml(idText(x.id))}" ${idText(row?.unit) === idText(x.id) ? "selected" : ""}>${escapeHtml(x.name)} (${escapeHtml(x.code)})</option>`).join("")}</select></label>
     <label class="field">Low-stock alert quantity<input name="reorder_point" type="number" min="0" step="any" value="${escapeHtml(row?.reorder_point || 0)}"></label>
     ${row ? "" : `<label class="field">Initial storage location<select name="initial_location"><option value="">No opening stock</option>${state.locations.map(x => `<option value="${escapeHtml(idText(x.id))}">${escapeHtml(x.name)}</option>`).join("")}</select></label><label class="field">Initial quantity<input name="initial_quantity" type="number" min="0" step="any" value="0"></label>`}`;
   openSimple(row ? "Edit product" : "Add product", fields, async data => {
-    const vars = { team: state.team, name: data.get("name"), sku: data.get("sku"), category: state.categories.find(x => idText(x.id) === data.get("category"))?.id || null,
-      unit: state.units.find(x => idText(x.id) === data.get("unit"))?.id, reorder: Number(data.get("reorder_point") || 0) };
-    if (row) await query("UPDATE $id SET name=$name, category=$category, reorder_point=$reorder;", { id: row.id, ...vars });
+    const name = String(data.get("name")).trim(), sku = String(data.get("sku")).trim();
+    const reorder = Number(data.get("reorder_point") || 0);
+    const initial = Number(data.get("initial_quantity") || 0);
+    const location = state.locations.find(x => idText(x.id) === data.get("initial_location"));
+    if (!name || !sku) throw new Error("Enter a product name and SKU.");
+    if (!Number.isFinite(reorder) || reorder < 0 || !Number.isFinite(initial) || initial < 0) throw new Error("Stock quantities must be zero or greater.");
+    if (!row && state.products.some(product => product.sku.toLowerCase() === sku.toLowerCase())) throw new Error("This SKU is already in use.");
+    if (!row && initial > 0 && !location) throw new Error("Choose a storage location for opening stock.");
+    const vars = { team: state.team, name, sku, category: state.categories.find(x => idText(x.id) === data.get("category"))?.id || null,
+      unit: state.units.find(x => idText(x.id) === data.get("unit"))?.id, reorder };
+    if (row) await query("UPDATE $id SET name=$name, category=$category ?? NONE, reorder_point=$reorder;", { id: row.id, ...vars });
     else {
-      const created = await select(`CREATE product CONTENT { owned_by:$team, name:$name, sku:$sku, category:$category, unit:$unit, reorder_point:$reorder, active:true } RETURN AFTER;`, vars);
-      const product = created[0]; const initial = Number(data.get("initial_quantity") || 0); const location = state.locations.find(x => idText(x.id) === data.get("initial_location"));
+      const created = await select(`CREATE product CONTENT { owned_by:$team, name:$name, sku:$sku, category:$category ?? NONE, unit:$unit, reorder_point:$reorder, active:true } RETURN AFTER;`, vars);
+      const product = created[0];
       if (initial > 0 && location) {
         await ensurePosition(product.id, location.id);
         const line = { line_key: crypto.randomUUID(), product: product.id, counted_quantity: initial };
@@ -366,20 +443,43 @@ function openProduct(row = null) {
 }
 function openWarehouse(row = null) {
   openSimple(row ? "Edit warehouse" : "Add warehouse", `<label class="field">Warehouse name<input name="name" value="${escapeHtml(row?.name || "")}" required></label><label class="field">Code<input name="code" value="${escapeHtml(row?.code || "")}" required></label>`, async data => {
-    if (row) await query("UPDATE $id SET name=$name, code=$code;", { id: row.id, name: data.get("name"), code: data.get("code") });
-    else await query("CREATE warehouse CONTENT { owned_by:$team, name:$name, code:$code, active:true };", { team: state.team, name: data.get("name"), code: data.get("code") });
+    const name = String(data.get("name")).trim(), code = String(data.get("code")).trim();
+    if (!name || !code) throw new Error("Enter a warehouse name and code.");
+    if (state.warehouses.some(item => idText(item.id) !== idText(row?.id) && item.code.toLowerCase() === code.toLowerCase())) throw new Error("This warehouse code is already in use.");
+    if (row) await query("UPDATE $id SET name=$name, code=$code;", { id: row.id, name, code });
+    else await query("CREATE warehouse CONTENT { owned_by:$team, name:$name, code:$code, active:true };", { team: state.team, name, code });
   });
 }
 function openLocation(row = null) {
-  const fields = `<label class="field">Warehouse<select name="warehouse" required>${state.warehouses.map(x => `<option value="${escapeHtml(idText(x.id))}" ${idText(row?.warehouse) === idText(x.id) ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}</select></label><label class="field">Location name<input name="name" value="${escapeHtml(row?.name || "")}" required></label><label class="field">Code<input name="code" value="${escapeHtml(row?.code || "")}" required></label><label class="field">Parent location<select name="parent"><option value="">None</option>${state.locations.filter(x => !row || idText(x.id) !== idText(row.id)).map(x => `<option value="${escapeHtml(idText(x.id))}" ${idText(row?.parent) === idText(x.id) ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}</select></label>`;
-  openSimple(row ? "Edit location" : "Add location", fields, async data => {
-    const vars = { team: state.team, warehouse: state.warehouses.find(x => idText(x.id) === data.get("warehouse"))?.id, name: data.get("name"), code: data.get("code"), parent: state.locations.find(x => idText(x.id) === data.get("parent"))?.id || null };
-    if (row) await query("UPDATE $id SET warehouse=$warehouse, name=$name, code=$code, parent=$parent;", { id: row.id, ...vars });
-    else await query("CREATE stock_location CONTENT { owned_by:$team, warehouse:$warehouse, name:$name, code:$code, parent:$parent, active:true };", vars);
+  if (!state.warehouses.length) { toast("Add a warehouse before creating a location.", true); return; }
+  const selectedWarehouse = idText(row?.warehouse || state.warehouses[0].id);
+  const parents = state.locations.filter(x => idText(x.warehouse) === selectedWarehouse && idText(x.id) !== idText(row?.id));
+  const fields = `<label class="field">Warehouse<select name="warehouse" required>${state.warehouses.map(x => `<option value="${escapeHtml(idText(x.id))}" ${selectedWarehouse === idText(x.id) ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}</select></label><label class="field">Location name<input name="name" value="${escapeHtml(row?.name || "")}" required></label><label class="field">Code<input name="code" value="${escapeHtml(row?.code || "")}" required></label><label class="field">Parent location<select name="parent"><option value="">None</option>${parents.map(x => `<option value="${escapeHtml(idText(x.id))}" ${idText(row?.parent) === idText(x.id) ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("")}</select></label>`;
+  const form = openSimple(row ? "Edit location" : "Add location", fields, async data => {
+    const warehouse = state.warehouses.find(x => idText(x.id) === data.get("warehouse"))?.id;
+    const name = String(data.get("name")).trim(), code = String(data.get("code")).trim();
+    const parent = state.locations.find(x => idText(x.id) === data.get("parent"))?.id || null;
+    if (!name || !code) throw new Error("Enter a location name and code.");
+    if (parent && idText(state.locations.find(x => idText(x.id) === idText(parent))?.warehouse) !== idText(warehouse)) throw new Error("The parent location must be in the same warehouse.");
+    if (state.locations.some(item => idText(item.id) !== idText(row?.id) && idText(item.warehouse) === idText(warehouse) && item.code.toLowerCase() === code.toLowerCase())) throw new Error("This location code is already in use in this warehouse.");
+    const vars = { team: state.team, warehouse, name, code, parent };
+    if (row) await query("UPDATE $id SET warehouse=$warehouse, name=$name, code=$code, parent=$parent ?? NONE;", { id: row.id, ...vars });
+    else await query("CREATE stock_location CONTENT { owned_by:$team, warehouse:$warehouse, name:$name, code:$code, parent:$parent ?? NONE, active:true };", vars);
   });
+  form.elements.warehouse.addEventListener("change", () => setSelectOptions(form.elements.parent,
+    state.locations.filter(x => idText(x.warehouse) === form.elements.warehouse.value && idText(x.id) !== idText(row?.id)), "", "None"));
 }
-function openCategory() { openSimple("Add product category", `<label class="field">Category name<input name="name" required></label>`, async data => query("CREATE product_category CONTENT { owned_by:$team, name:$name };", { team: state.team, name: data.get("name") })); }
-function openUnit() { openSimple("Add unit of measure", `<label class="field">Name<input name="name" required></label><label class="field">Code<input name="code" required></label>`, async data => query("CREATE unit_of_measure CONTENT { owned_by:$team, name:$name, code:$code };", { team: state.team, name: data.get("name"), code: data.get("code") })); }
+function openCategory() { openSimple("Add product category", `<label class="field">Category name<input name="name" required></label>`, async data => {
+  const name = String(data.get("name")).trim(); if (!name) throw new Error("Enter a category name.");
+  if (state.categories.some(x => x.name.toLowerCase() === name.toLowerCase())) throw new Error("This category already exists.");
+  await query("CREATE product_category CONTENT { owned_by:$team, name:$name };", { team: state.team, name });
+}); }
+function openUnit() { openSimple("Add unit of measure", `<label class="field">Name<input name="name" required></label><label class="field">Code <span class="hint">1–16 letters, numbers, dots, dashes or underscores; begins with a letter</span><input name="code" pattern="[A-Za-z][A-Za-z0-9._-]{0,15}" maxlength="16" required></label>`, async data => {
+  const name = String(data.get("name")).trim(), code = String(data.get("code")).trim();
+  if (!name || !code) throw new Error("Enter a unit name and code.");
+  if (state.units.some(x => x.code.toLowerCase() === code.toLowerCase())) throw new Error("This unit code is already in use.");
+  await query("CREATE unit_of_measure CONTENT { owned_by:$team, name:$name, code:$code };", { team: state.team, name, code });
+}); }
 
 async function loadHistory() {
   const kind = $("#history-kind").value || null; const location = $("#history-location").value; const product = $("#history-product").value;
@@ -414,6 +514,7 @@ document.addEventListener("click", async event => {
     else if (target.matches("[data-edit-product]")) openProduct(productById(target.dataset.editProduct));
     else if (target.matches("[data-delete-product]")) { const row = productById(target.dataset.deleteProduct); if (confirm(`Delete ${row.name}?`)) { await query("DELETE $id RETURN BEFORE;", { id: row.id }); await refresh(); } }
     else if (target.matches("[data-add-category]")) openCategory();
+    else if (target.matches("[data-add-unit]")) openUnit();
     else if (target.matches("[data-add-warehouse]")) openWarehouse();
     else if (target.matches("[data-edit-warehouse]")) openWarehouse(state.warehouses.find(x => idText(x.id) === target.dataset.editWarehouse));
     else if (target.matches("[data-add-location]")) openLocation();
@@ -427,8 +528,9 @@ document.addEventListener("click", async event => {
     else if (target.id === "save-draft") await saveOperation(null, "draft");
     else if (target.id === "resend-code") {
       const pending = JSON.parse(localStorage.getItem("stocksense.pending") || "null");
-      await connect();
-      try { await state.db.signin({ access: "stocksense_recovery", variables: { identifier: pending?.email || $("#verify-form [name=identifier]").value } }); } catch {}
+      const email = pending?.email || $("#verify-form [name=identifier]").value;
+      if (!$("#verify-form [name=identifier]").reportValidity()) return;
+      await requestRecoveryCode(email);
       authMessage("If the code can be resent, it will arrive shortly. Check your inbox.");
     }
     else if (target.id === "load-history") await loadHistory();
@@ -442,10 +544,22 @@ document.addEventListener("change", event => {
   if (event.target.matches("[data-filter]")) { state.filters[event.target.dataset.filter] = event.target.value; renderPage(); }
   if (event.target.matches("#operation-form [name=kind]")) syncOperationVisibility();
 });
+$("#signup-form [name=name]").addEventListener("input", () => generateLoginId());
+for (const name of ["name", "workspace"]) {
+  $(`#signup-form [name=${name}]`).addEventListener("input", event => event.target.setCustomValidity(""));
+}
+$("#regenerate-login-id").addEventListener("click", () => generateLoginId(true));
+for (const formId of ["signup-form", "reset-form"]) {
+  const form = $(`#${formId}`);
+  form.elements.confirm_password.addEventListener("input", () => form.elements.confirm_password.setCustomValidity(""));
+  form.elements[formId === "signup-form" ? "password" : "new_password"]
+    .addEventListener("input", () => form.elements.confirm_password.setCustomValidity(""));
+}
 $("#login-form").addEventListener("submit", onLogin);
 $("#signup-form").addEventListener("submit", onSignup);
 $("#verify-form").addEventListener("submit", onVerify);
 $("#reset-form").addEventListener("submit", onReset);
+$("#send-reset-code").addEventListener("click", sendResetCode);
 $("#operation-form").addEventListener("submit", event => saveOperation(event, state.editingOperation?.status || "draft"));
 $("#add-line").addEventListener("click", () => addLine());
 $("#operation-form [name=kind]").addEventListener("change", syncOperationVisibility);
