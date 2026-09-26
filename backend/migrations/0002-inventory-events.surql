@@ -1,4 +1,4 @@
--- REBASE: project events
+-- STOCKSENSE: project events
 DEFINE EVENT OVERWRITE stock_operation_status ON TABLE stock_operation
 WHEN $event = 'UPDATE' AND $before.status != $after.status THEN {
     IF !(

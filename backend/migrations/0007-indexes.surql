@@ -1,4 +1,4 @@
--- REBASE: indexes
+-- STOCKSENSE: indexes
 DEFINE INDEX OVERWRITE idx_unit_of_measure_owned_by ON TABLE unit_of_measure FIELDS owned_by;
 DEFINE INDEX OVERWRITE idx_unit_of_measure_readers ON TABLE unit_of_measure FIELDS readers_index.*;
 DEFINE INDEX OVERWRITE idx_product_category_owned_by ON TABLE product_category FIELDS owned_by;

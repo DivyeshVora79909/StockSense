@@ -1,3 +1,4 @@
 .data/
 .env
 backend/stocksense-install.surql
+node_modules/

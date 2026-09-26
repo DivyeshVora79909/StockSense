@@ -1,4 +1,4 @@
--- REBASE: raw framework
+-- STOCKSENSE: raw framework
 -- Password is one optional credential. Authentication is established by a
 -- successful access method, not by the presence of the password field.
 
@@ -13,7 +13,7 @@ DEFINE ACCESS OVERWRITE account_password ON DATABASE TYPE RECORD
             WHERE number = $identifier_value
               AND verified_revision = revision
               AND principal.login_access = true)[0];
-        LET $username_principal = (SELECT VALUE id FROM rebase_user
+        LET $username_principal = (SELECT VALUE id FROM stocksense_user
             WHERE username = $identifier_value AND login_access = true)[0];
         LET $principal = IF $email_principal != NONE THEN $email_principal
             ELSE IF $phone_principal != NONE THEN $phone_principal
@@ -55,7 +55,7 @@ DEFINE ACCESS OVERWRITE account_code ON DATABASE TYPE RECORD
             WHERE address = $identifier_value)[0];
         LET $phone_identity = (SELECT * FROM authentication_phone
             WHERE number = $identifier_value)[0];
-        LET $username_principal = (SELECT VALUE id FROM rebase_user
+        LET $username_principal = (SELECT VALUE id FROM stocksense_user
             WHERE username = $identifier_value AND login_access = true)[0];
         LET $username_challenge = (SELECT * FROM authentication_challenge
             WHERE principal = $username_principal
@@ -130,20 +130,20 @@ DEFINE INDEX OVERWRITE idx_audit_mutation_target ON audit_mutation COLUMNS targe
 -- Authentication identities and challenges are declared in authentication.surql.
 
 -- USER
-DEFINE TABLE OVERWRITE rebase_user SCHEMAFULL PERMISSIONS
+DEFINE TABLE OVERWRITE stocksense_user SCHEMAFULL PERMISSIONS
     FOR create WHERE 'node_create' IN $auth.permissions
     FOR select WHERE id = $auth OR ('node_select' IN $auth.permissions AND id IN $auth.dominates)
     FOR update WHERE id = $auth OR ('node_update' IN $auth.permissions AND id IN $auth.dominates)
     FOR delete WHERE 'node_delete' IN $auth.permissions AND id IN $auth.dominates
     ;
 
-DEFINE FIELD OVERWRITE name ON rebase_user TYPE string VALUE {
+DEFINE FIELD OVERWRITE name ON stocksense_user TYPE string VALUE {
         LET $clean_name = string::trim($value ?? "");
         IF !$clean_name { THROW "VALIDATION_ERR: Invalid Name"; };
         RETURN $clean_name;
     };
 
-DEFINE FIELD OVERWRITE username ON rebase_user TYPE option<string> DEFAULT NONE VALUE {
+DEFINE FIELD OVERWRITE username ON stocksense_user TYPE option<string> DEFAULT NONE VALUE {
         IF $value = NONE { RETURN NONE; };
         LET $clean_username = string::lowercase(string::trim($value));
         IF !string::matches($clean_username, /^[a-z0-9][a-z0-9_.-]{8,31}$/) {
@@ -152,19 +152,19 @@ DEFINE FIELD OVERWRITE username ON rebase_user TYPE option<string> DEFAULT NONE 
         RETURN $clean_username;
     } ;
 
-DEFINE FIELD OVERWRITE login_access ON rebase_user TYPE bool DEFAULT true
+DEFINE FIELD OVERWRITE login_access ON stocksense_user TYPE bool DEFAULT true
         PERMISSIONS FOR update WHERE id != $auth;
 
 -- A password is one credential option, not the authenticated-state flag.
     -- NONE is valid while a delivered email/phone challenge or OAuth is used.
-    DEFINE FIELD OVERWRITE password ON rebase_user TYPE option<string>
+    DEFINE FIELD OVERWRITE password ON stocksense_user TYPE option<string>
         DEFAULT NONE
         PERMISSIONS FOR select NONE FOR create, update NONE
         ;
 
 -- Incremented by authentication events when a credential/identity changes.
     -- It is private and is used to fence outstanding challenges.
-    DEFINE FIELD OVERWRITE authentication_revision ON rebase_user TYPE int
+    DEFINE FIELD OVERWRITE authentication_revision ON stocksense_user TYPE int
         DEFAULT 1
         VALUE {
             IF $before = NONE { RETURN 1; };
@@ -174,7 +174,7 @@ DEFINE FIELD OVERWRITE login_access ON rebase_user TYPE bool DEFAULT true
         PERMISSIONS FOR select NONE FOR create WHERE true FOR update NONE
         ;
 
-DEFINE FIELD OVERWRITE parents ON rebase_user TYPE array<record<rebase_user | rebase_group>>
+DEFINE FIELD OVERWRITE parents ON stocksense_user TYPE array<record<stocksense_user | stocksense_group>>
         DEFAULT IF $auth THEN [$auth] ELSE [] END
         VALUE array::distinct($value ?? [])
         -- Validate only edges introduced or removed by this mutation. Existing
@@ -182,22 +182,21 @@ DEFINE FIELD OVERWRITE parents ON rebase_user TYPE array<record<rebase_user | re
         ASSERT $value.len() > 0
             AND array::all(array::difference($value ?? [], $before ?? []), |$parent| record::exists($parent))
         REFERENCE ON DELETE REJECT
-        PERMISSIONS FOR update WHERE id != $auth
-        COMMENT '@rebase-reference-delta';
+        PERMISSIONS FOR update WHERE id != $auth;
 
-DEFINE FIELD OVERWRITE parent_groups ON rebase_user TYPE array<record<rebase_group>>
-        VALUE array::distinct(($this.parents ?? []).filter(|$p| record::tb($p) = 'rebase_group'))
+DEFINE FIELD OVERWRITE parent_groups ON stocksense_user TYPE array<record<stocksense_group>>
+        VALUE array::distinct(($this.parents ?? []).filter(|$p| record::tb($p) = 'stocksense_group'))
         PERMISSIONS FOR create, update NONE
         ;
 
-DEFINE FIELD OVERWRITE permissions ON rebase_user TYPE array<string>
+DEFINE FIELD OVERWRITE permissions ON stocksense_user TYPE array<string>
         VALUE array::distinct(array::flatten($this.parent_groups.role ?? [])).filter(|$permission| $permission != NONE)
         PERMISSIONS FOR create, update NONE
         ;
 
-DEFINE FIELD OVERWRITE dominates ON rebase_user TYPE array<record<rebase_user | rebase_group>> VALUE {
-        LET $ch_users = $this.id<~(rebase_user FIELD parents);
-        LET $ch_groups = $this.id<~(rebase_group FIELD parents);
+DEFINE FIELD OVERWRITE dominates ON stocksense_user TYPE array<record<stocksense_user | stocksense_group>> VALUE {
+        LET $ch_users = $this.id<~(stocksense_user FIELD parents);
+        LET $ch_groups = $this.id<~(stocksense_group FIELD parents);
 
         RETURN array::distinct(array::flatten([
             $ch_users,
@@ -209,17 +208,17 @@ DEFINE FIELD OVERWRITE dominates ON rebase_user TYPE array<record<rebase_user | 
     PERMISSIONS FOR create, update NONE
     ;
 
-DEFINE FIELD OVERWRITE created_at ON rebase_user TYPE datetime VALUE $before OR time::now() READONLY;
+DEFINE FIELD OVERWRITE created_at ON stocksense_user TYPE datetime VALUE $before OR time::now() READONLY;
 
-DEFINE FIELD OVERWRITE updated_at ON rebase_user TYPE datetime VALUE IF $before = NONE THEN time::now() ELSE $value END
+DEFINE FIELD OVERWRITE updated_at ON stocksense_user TYPE datetime VALUE IF $before = NONE THEN time::now() ELSE $value END
         PERMISSIONS FOR select, create WHERE true FOR update NONE ;
 
-DEFINE FIELD OVERWRITE created_by ON rebase_user TYPE option<record<rebase_user>> VALUE $before OR $auth READONLY;
+DEFINE FIELD OVERWRITE created_by ON stocksense_user TYPE option<record<stocksense_user>> VALUE $before OR $auth READONLY;
 
-DEFINE FIELD OVERWRITE updated_by ON rebase_user TYPE option<record<rebase_user>>
+DEFINE FIELD OVERWRITE updated_by ON stocksense_user TYPE option<record<stocksense_user>>
         PERMISSIONS FOR select WHERE true FOR create, update NONE ;
 
-DEFINE FIELD OVERWRITE z_access_index ON rebase_user TYPE array<string>
+DEFINE FIELD OVERWRITE z_access_index ON stocksense_user TYPE array<string>
         VALUE array::distinct(array::concat(
             [<string>$this.id],
             ($this.parent_groups ?? []).map(|$node| <string>$node),
@@ -228,41 +227,40 @@ DEFINE FIELD OVERWRITE z_access_index ON rebase_user TYPE array<string>
         PERMISSIONS FOR create, update NONE
         ;
 
-DEFINE INDEX OVERWRITE idx_user_username ON rebase_user COLUMNS username UNIQUE;
+DEFINE INDEX OVERWRITE idx_user_username ON stocksense_user COLUMNS username UNIQUE;
 
 -- GROUPS
-DEFINE TABLE OVERWRITE rebase_group SCHEMAFULL PERMISSIONS
+DEFINE TABLE OVERWRITE stocksense_group SCHEMAFULL PERMISSIONS
     FOR create WHERE 'node_create' IN $auth.permissions
     FOR select WHERE 'node_select' IN $auth.permissions AND (id IN $auth.dominates OR id IN $auth.parent_groups)
     FOR update WHERE 'node_update' IN $auth.permissions AND id IN $auth.dominates
     FOR delete WHERE 'node_delete' IN $auth.permissions AND id IN $auth.dominates
     ;
 
-DEFINE FIELD OVERWRITE name ON rebase_group TYPE string VALUE {
+DEFINE FIELD OVERWRITE name ON stocksense_group TYPE string VALUE {
         LET $clean_name = string::trim($value ?? "");
         IF !$clean_name { THROW "VALIDATION_ERR: Invalid Name"; };
         RETURN $clean_name;
     };
 
-DEFINE FIELD OVERWRITE role ON rebase_group TYPE array<string> DEFAULT [] VALUE array::distinct($value ?? []);
+DEFINE FIELD OVERWRITE role ON stocksense_group TYPE array<string> DEFAULT [] VALUE array::distinct($value ?? []);
 
-DEFINE FIELD OVERWRITE parents ON rebase_group TYPE array<record<rebase_user | rebase_group>>
+DEFINE FIELD OVERWRITE parents ON stocksense_group TYPE array<record<stocksense_user | stocksense_group>>
         DEFAULT IF $auth THEN [$auth] ELSE [] END
         VALUE array::distinct($value ?? [])
-        ASSERT id = rebase_group:root OR ($value.len() > 0
+        ASSERT id = stocksense_group:root OR ($value.len() > 0
             AND array::all(array::difference($value ?? [], $before ?? []), |$parent| record::exists($parent)))
         REFERENCE ON DELETE REJECT
-        PERMISSIONS FOR update WHERE id != $auth
-        COMMENT '@rebase-reference-delta';
+        PERMISSIONS FOR update WHERE id != $auth;
 
-DEFINE FIELD OVERWRITE parent_groups ON rebase_group TYPE array<record<rebase_group>>
-        VALUE array::distinct(($this.parents ?? []).filter(|$p| record::tb($p) = 'rebase_group'))
+DEFINE FIELD OVERWRITE parent_groups ON stocksense_group TYPE array<record<stocksense_group>>
+        VALUE array::distinct(($this.parents ?? []).filter(|$p| record::tb($p) = 'stocksense_group'))
         PERMISSIONS FOR create, update NONE
         ;
 
-DEFINE FIELD OVERWRITE dominates ON rebase_group TYPE array<record<rebase_user | rebase_group>> VALUE {
-        LET $ch_users = $this.id<~(rebase_user FIELD parents);
-        LET $ch_groups = $this.id<~(rebase_group FIELD parents);
+DEFINE FIELD OVERWRITE dominates ON stocksense_group TYPE array<record<stocksense_user | stocksense_group>> VALUE {
+        LET $ch_users = $this.id<~(stocksense_user FIELD parents);
+        LET $ch_groups = $this.id<~(stocksense_group FIELD parents);
 
         RETURN array::distinct(array::flatten([
             $ch_users,
@@ -274,14 +272,14 @@ DEFINE FIELD OVERWRITE dominates ON rebase_group TYPE array<record<rebase_user |
     PERMISSIONS FOR create, update NONE
     ;
 
-DEFINE FIELD OVERWRITE created_at ON rebase_group TYPE datetime VALUE $before OR time::now() READONLY;
+DEFINE FIELD OVERWRITE created_at ON stocksense_group TYPE datetime VALUE $before OR time::now() READONLY;
 
-DEFINE FIELD OVERWRITE updated_at ON rebase_group TYPE datetime VALUE IF $before = NONE THEN time::now() ELSE $value END
+DEFINE FIELD OVERWRITE updated_at ON stocksense_group TYPE datetime VALUE IF $before = NONE THEN time::now() ELSE $value END
         PERMISSIONS FOR select, create WHERE true FOR update NONE ;
 
-DEFINE FIELD OVERWRITE created_by ON rebase_group TYPE option<record<rebase_user>> VALUE $before OR $auth READONLY;
+DEFINE FIELD OVERWRITE created_by ON stocksense_group TYPE option<record<stocksense_user>> VALUE $before OR $auth READONLY;
 
-DEFINE FIELD OVERWRITE updated_by ON rebase_group TYPE option<record<rebase_user>>
+DEFINE FIELD OVERWRITE updated_by ON stocksense_group TYPE option<record<stocksense_user>>
         PERMISSIONS FOR select WHERE true FOR create, update NONE ;
 
 -- Authentication data is deliberately separate from the authorization graph.
@@ -296,45 +294,45 @@ DEFINE FIELD OVERWRITE updated_by ON rebase_group TYPE option<record<rebase_user
 -- BYOC recovery delivery. Only a root/deployment administrator can read or
 -- provision these records. The anonymous challenge endpoint resolves a fixed
 -- policy row and never accepts a configuration record from the caller.
-DEFINE TABLE OVERWRITE rebase_email_delivery_config SCHEMAFULL PERMISSIONS NONE;
+DEFINE TABLE OVERWRITE stocksense_email_delivery_config SCHEMAFULL PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE api_key ON rebase_email_delivery_config TYPE string
+DEFINE FIELD OVERWRITE api_key ON stocksense_email_delivery_config TYPE string
     ASSERT $value.len() > 0 PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE from_email ON rebase_email_delivery_config TYPE string
+DEFINE FIELD OVERWRITE from_email ON stocksense_email_delivery_config TYPE string
     ASSERT string::is_email($value) PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE from_name ON rebase_email_delivery_config TYPE string
+DEFINE FIELD OVERWRITE from_name ON stocksense_email_delivery_config TYPE string
     ASSERT $value.len() > 0 PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE reply_to ON rebase_email_delivery_config TYPE option<string> DEFAULT NONE
+DEFINE FIELD OVERWRITE reply_to ON stocksense_email_delivery_config TYPE option<string> DEFAULT NONE
     ASSERT $value = NONE OR string::is_email($value) PERMISSIONS NONE;
 
-DEFINE TABLE OVERWRITE rebase_sms_delivery_config SCHEMAFULL PERMISSIONS NONE;
+DEFINE TABLE OVERWRITE stocksense_sms_delivery_config SCHEMAFULL PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE account_sid ON rebase_sms_delivery_config TYPE string
+DEFINE FIELD OVERWRITE account_sid ON stocksense_sms_delivery_config TYPE string
     ASSERT $value.len() > 0 PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE auth_token ON rebase_sms_delivery_config TYPE option<string> DEFAULT NONE
+DEFINE FIELD OVERWRITE auth_token ON stocksense_sms_delivery_config TYPE option<string> DEFAULT NONE
     PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE api_key_sid ON rebase_sms_delivery_config TYPE option<string> DEFAULT NONE
+DEFINE FIELD OVERWRITE api_key_sid ON stocksense_sms_delivery_config TYPE option<string> DEFAULT NONE
     PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE api_key_secret ON rebase_sms_delivery_config TYPE option<string> DEFAULT NONE
+DEFINE FIELD OVERWRITE api_key_secret ON stocksense_sms_delivery_config TYPE option<string> DEFAULT NONE
     PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE from_number ON rebase_sms_delivery_config TYPE string
+DEFINE FIELD OVERWRITE from_number ON stocksense_sms_delivery_config TYPE string
     ASSERT string::matches($value, /^\+[1-9][0-9]{7,14}$/) PERMISSIONS NONE;
 
-DEFINE TABLE OVERWRITE rebase_authentication_delivery_policy SCHEMAFULL PERMISSIONS NONE;
+DEFINE TABLE OVERWRITE stocksense_authentication_delivery_policy SCHEMAFULL PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE email_configuration ON rebase_authentication_delivery_policy
-    TYPE option<record<rebase_email_delivery_config>> DEFAULT NONE
+DEFINE FIELD OVERWRITE email_configuration ON stocksense_authentication_delivery_policy
+    TYPE option<record<stocksense_email_delivery_config>> DEFAULT NONE
     REFERENCE ON DELETE REJECT PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE phone_configuration ON rebase_authentication_delivery_policy
-    TYPE option<record<rebase_sms_delivery_config>> DEFAULT NONE
+DEFINE FIELD OVERWRITE phone_configuration ON stocksense_authentication_delivery_policy
+    TYPE option<record<stocksense_sms_delivery_config>> DEFAULT NONE
     REFERENCE ON DELETE REJECT PERMISSIONS NONE;
 
 -- EMAIL IDENTITIES
@@ -342,10 +340,9 @@ DEFINE TABLE OVERWRITE authentication_email SCHEMAFULL PERMISSIONS
     FOR create WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates)
     FOR select WHERE $auth AND (principal = $auth OR principal IN $auth.dominates)
     FOR update WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates)
-    FOR delete WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates)
-    COMMENT '@rebase-authentication';
+    FOR delete WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates);
 
-DEFINE FIELD OVERWRITE principal ON authentication_email TYPE record<rebase_user>
+DEFINE FIELD OVERWRITE principal ON authentication_email TYPE record<stocksense_user>
         ASSERT record::exists($value)
         REFERENCE ON DELETE CASCADE
         PERMISSIONS FOR update NONE;
@@ -387,10 +384,9 @@ DEFINE TABLE OVERWRITE authentication_phone SCHEMAFULL PERMISSIONS
     FOR create WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates)
     FOR select WHERE $auth AND (principal = $auth OR principal IN $auth.dominates)
     FOR update WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates)
-    FOR delete WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates)
-    COMMENT '@rebase-authentication';
+    FOR delete WHERE $auth AND ((principal = $auth AND $token.iat >= time::unix(time::now()) - 600) OR principal IN $auth.dominates);
 
-DEFINE FIELD OVERWRITE principal ON authentication_phone TYPE record<rebase_user>
+DEFINE FIELD OVERWRITE principal ON authentication_phone TYPE record<stocksense_user>
         ASSERT record::exists($value)
         REFERENCE ON DELETE CASCADE
         PERMISSIONS FOR update NONE;
@@ -431,7 +427,7 @@ DEFINE INDEX OVERWRITE idx_authentication_phone_principal ON authentication_phon
 DEFINE TABLE OVERWRITE authentication_challenge SCHEMAFULL PERMISSIONS NONE
     ;
 
-DEFINE FIELD OVERWRITE principal ON authentication_challenge TYPE record<rebase_user>
+DEFINE FIELD OVERWRITE principal ON authentication_challenge TYPE record<stocksense_user>
     ASSERT record::exists($value) REFERENCE ON DELETE CASCADE;
 
 DEFINE FIELD OVERWRITE target ON authentication_challenge TYPE record<authentication_email | authentication_phone>
@@ -463,130 +459,118 @@ DEFINE INDEX OVERWRITE idx_authentication_challenge_principal ON authentication_
 -- The challenge and this delivery request are committed together. The
 -- ciphertext contains the one-time code and message content; it is opened
 -- only by the static runtime handler using the separate payload-encryption key.
-DEFINE TABLE OVERWRITE authentication_delivery_task SCHEMAFULL PERMISSIONS NONE
-    COMMENT '@rebase-operation queued CREATE @rebase-adapter sendBrevoEmail @rebase-adapter getBrevoEmailEvents @rebase-adapter sendTwilioSms @rebase-adapter openAuthenticationPayload @rebase-timeout 30s';
+DEFINE TABLE OVERWRITE authentication_delivery_task SCHEMAFULL PERMISSIONS NONE;
 
 DEFINE FIELD OVERWRITE configuration ON authentication_delivery_task
-    TYPE record<rebase_email_delivery_config | rebase_sms_delivery_config> READONLY
-    REFERENCE ON DELETE REJECT COMMENT '@rebase-operation-input';
+    TYPE record<stocksense_email_delivery_config | stocksense_sms_delivery_config> READONLY
+    REFERENCE ON DELETE REJECT;
 
-DEFINE FIELD OVERWRITE principal ON authentication_delivery_task TYPE record<rebase_user> READONLY
-    REFERENCE ON DELETE CASCADE COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE principal ON authentication_delivery_task TYPE record<stocksense_user> READONLY
+    REFERENCE ON DELETE CASCADE;
 
 DEFINE FIELD OVERWRITE target ON authentication_delivery_task
     TYPE record<authentication_email | authentication_phone> READONLY
-    REFERENCE ON DELETE CASCADE COMMENT '@rebase-operation-input';
+    REFERENCE ON DELETE CASCADE;
 
 DEFINE FIELD OVERWRITE challenge ON authentication_delivery_task TYPE record<authentication_challenge> READONLY
-    REFERENCE ON DELETE CASCADE COMMENT '@rebase-operation-input';
+    REFERENCE ON DELETE CASCADE;
 
 DEFINE FIELD OVERWRITE channel ON authentication_delivery_task TYPE string READONLY
-    ASSERT $value IN ['email', 'phone'] COMMENT '@rebase-operation-input';
+    ASSERT $value IN ['email', 'phone'];
 
 DEFINE FIELD OVERWRITE principal_revision ON authentication_delivery_task TYPE int READONLY
-    ASSERT $value >= 1 COMMENT '@rebase-operation-input';
+    ASSERT $value >= 1;
 
 DEFINE FIELD OVERWRITE target_revision ON authentication_delivery_task TYPE int READONLY
-    ASSERT $value >= 1 COMMENT '@rebase-operation-input';
+    ASSERT $value >= 1;
 
-DEFINE FIELD OVERWRITE delivery_nonce ON authentication_delivery_task TYPE uuid READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE delivery_nonce ON authentication_delivery_task TYPE uuid READONLY;
 
 DEFINE FIELD OVERWRITE payload_ciphertext ON authentication_delivery_task TYPE string READONLY
-    PERMISSIONS NONE COMMENT '@rebase-operation-input';
+    PERMISSIONS NONE;
 
 DEFINE FIELD OVERWRITE provider_reference ON authentication_delivery_task TYPE option<string> DEFAULT NONE
-    PERMISSIONS NONE COMMENT '@rebase-operation-output';
+    PERMISSIONS NONE;
 
 -- Private durable scan position shared by runtime instances in this database.
-DEFINE TABLE OVERWRITE rebase_reconciliation_cursor SCHEMAFULL PERMISSIONS NONE;
+DEFINE TABLE OVERWRITE stocksense_reconciliation_cursor SCHEMAFULL PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE cursors ON rebase_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
+DEFINE FIELD OVERWRITE cursors ON stocksense_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
 
-DEFINE FIELD OVERWRITE high_water ON rebase_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
+DEFINE FIELD OVERWRITE high_water ON stocksense_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
 
-DEFINE FIELD OVERWRITE retention_cursors ON rebase_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
+DEFINE FIELD OVERWRITE retention_cursors ON stocksense_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
 
-DEFINE FIELD OVERWRITE retention_high_water ON rebase_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
+DEFINE FIELD OVERWRITE retention_high_water ON stocksense_reconciliation_cursor TYPE object FLEXIBLE DEFAULT {};
 
-DEFINE FIELD OVERWRITE table_offset ON rebase_reconciliation_cursor TYPE int DEFAULT 0 ASSERT $value >= 0;
+DEFINE FIELD OVERWRITE table_offset ON stocksense_reconciliation_cursor TYPE int DEFAULT 0 ASSERT $value >= 0;
 
-DEFINE FIELD OVERWRITE version ON rebase_reconciliation_cursor TYPE int DEFAULT 0 ASSERT $value >= 0;
+DEFINE FIELD OVERWRITE version ON stocksense_reconciliation_cursor TYPE int DEFAULT 0 ASSERT $value >= 0;
 
-DEFINE FIELD OVERWRITE updated_at ON rebase_reconciliation_cursor TYPE datetime DEFAULT time::now();
+DEFINE FIELD OVERWRITE updated_at ON stocksense_reconciliation_cursor TYPE datetime DEFAULT time::now();
 
-DEFINE TABLE OVERWRITE rebase_webhook_receipt SCHEMAFULL PERMISSIONS NONE
-    COMMENT '@rebase-operation queued CREATE';
+DEFINE TABLE OVERWRITE stocksense_webhook_receipt SCHEMAFULL PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE provider_account_id ON rebase_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE provider_account_id ON stocksense_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY;
 
-DEFINE FIELD OVERWRITE event_id ON rebase_webhook_receipt TYPE string ASSERT $value.len() > 0 AND $value.len() <= 256 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE event_id ON stocksense_webhook_receipt TYPE string ASSERT $value.len() > 0 AND $value.len() <= 256 READONLY;
 
-DEFINE FIELD OVERWRITE provider ON rebase_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE provider ON stocksense_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY;
 
-DEFINE FIELD OVERWRITE event ON rebase_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE event ON stocksense_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY;
 
-DEFINE FIELD OVERWRITE config_id ON rebase_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE config_id ON stocksense_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY;
 
-DEFINE FIELD OVERWRITE target_id ON rebase_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE target_id ON stocksense_webhook_receipt TYPE string ASSERT $value.len() > 0 READONLY;
 
-DEFINE FIELD OVERWRITE payload_hash ON rebase_webhook_receipt TYPE string ASSERT $value.len() = 64 READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE payload_hash ON stocksense_webhook_receipt TYPE string ASSERT $value.len() = 64 READONLY;
 
-DEFINE FIELD OVERWRITE normalized_payload ON rebase_webhook_receipt TYPE object FLEXIBLE READONLY
-    COMMENT '@rebase-operation-input';
+DEFINE FIELD OVERWRITE normalized_payload ON stocksense_webhook_receipt TYPE object FLEXIBLE READONLY;
 
-DEFINE FIELD OVERWRITE received_at ON rebase_webhook_receipt TYPE datetime DEFAULT time::now() READONLY;
+DEFINE FIELD OVERWRITE received_at ON stocksense_webhook_receipt TYPE datetime DEFAULT time::now() READONLY;
 
-DEFINE FIELD OVERWRITE applied_at ON rebase_webhook_receipt TYPE option<datetime> DEFAULT NONE
-    PERMISSIONS FOR select WHERE true FOR create, update NONE
-    COMMENT '@rebase-operation-output';
+DEFINE FIELD OVERWRITE applied_at ON stocksense_webhook_receipt TYPE option<datetime> DEFAULT NONE
+    PERMISSIONS FOR select WHERE true FOR create, update NONE;
 
-DEFINE INDEX OVERWRITE idx_rebase_webhook_receipt_account_event
-    ON TABLE rebase_webhook_receipt FIELDS provider_account_id, event_id UNIQUE;
+DEFINE INDEX OVERWRITE idx_stocksense_webhook_receipt_account_event
+    ON TABLE stocksense_webhook_receipt FIELDS provider_account_id, event_id UNIQUE;
 
 -- Authorization/reader maintenance is not a principal profile edit.
-DEFINE EVENT OVERWRITE principal_touch ON rebase_user WHEN $event = 'CREATE' OR ($event = 'UPDATE' AND (
+DEFINE EVENT OVERWRITE principal_touch ON stocksense_user WHEN $event = 'CREATE' OR ($event = 'UPDATE' AND (
     $before.name != $after.name OR $before.username != $after.username OR $before.parents != $after.parents
     OR $before.login_access != $after.login_access OR $before.password != $after.password
 )) THEN { UPDATE $after.id SET updated_at = time::now(), updated_by = $auth RETURN NONE; };
 
-DEFINE EVENT OVERWRITE principal_touch ON rebase_group WHEN $event = 'CREATE' OR ($event = 'UPDATE' AND (
+DEFINE EVENT OVERWRITE principal_touch ON stocksense_group WHEN $event = 'CREATE' OR ($event = 'UPDATE' AND (
     $before.name != $after.name OR $before.role != $after.role OR $before.parents != $after.parents
 )) THEN { UPDATE $after.id SET updated_at = time::now(), updated_by = $auth RETURN NONE; };
 
 -- Cycle detection for the authorization graph.
-DEFINE EVENT OVERWRITE prevent_cycle ON TABLE rebase_user WHEN $event IN ["CREATE", "UPDATE"] AND $before.parents != $after.parents THEN {
+DEFINE EVENT OVERWRITE prevent_cycle ON TABLE stocksense_user WHEN $event IN ["CREATE", "UPDATE"] AND $before.parents != $after.parents THEN {
     IF $after.id IN ($after.parents ?? []) OR ($after.parents ?? []) CONTAINSANY ($before.dominates ?? []) {
         THROW "ERR_CYCLE";
     };
 };
 
-DEFINE EVENT OVERWRITE prevent_cycle ON TABLE rebase_group WHEN $event IN ["CREATE", "UPDATE"] AND $before.parents != $after.parents THEN {
+DEFINE EVENT OVERWRITE prevent_cycle ON TABLE stocksense_group WHEN $event IN ["CREATE", "UPDATE"] AND $before.parents != $after.parents THEN {
     IF $after.id IN ($after.parents ?? []) OR ($after.parents ?? []) CONTAINSANY ($before.dominates ?? []) {
         THROW "ERR_CYCLE";
     };
 };
 
 -- Privilege escalation prevention.
-DEFINE EVENT OVERWRITE prevent_role_escalation ON TABLE rebase_group WHEN $event IN ["CREATE", "UPDATE"] AND $before.role != $after.role THEN {
+DEFINE EVENT OVERWRITE prevent_role_escalation ON TABLE stocksense_group WHEN $event IN ["CREATE", "UPDATE"] AND $before.role != $after.role THEN {
     LET $unauthorized = array::complement($after.role ?? [], $auth.permissions ?? []);
     IF $unauthorized AND $auth { THROW "ERR_PRIVILEGE_ESCALATION"; };
 };
 
 -- Permission propagation remains independent from authentication state.
-DEFINE EVENT OVERWRITE cascade_permissions_downward ON TABLE rebase_group WHEN $event = "UPDATE" AND $before.role != $after.role THEN {
-    LET $children_users = $after.id<~(rebase_user FIELD parents);
+DEFINE EVENT OVERWRITE cascade_permissions_downward ON TABLE stocksense_group WHEN $event = "UPDATE" AND $before.role != $after.role THEN {
+    LET $children_users = $after.id<~(stocksense_user FIELD parents);
     IF $children_users { UPDATE $children_users; };
 };
 
-DEFINE EVENT OVERWRITE upward_propagation_trigger ON TABLE rebase_user WHEN $event THEN {
+DEFINE EVENT OVERWRITE upward_propagation_trigger ON TABLE stocksense_user WHEN $event THEN {
     IF $before.parents != $after.parents {
         LET $parents_to_ping = array::union($before.parents ?? [], $after.parents ?? []);
         IF $parents_to_ping { UPDATE $parents_to_ping; };
@@ -596,7 +580,7 @@ DEFINE EVENT OVERWRITE upward_propagation_trigger ON TABLE rebase_user WHEN $eve
     };
 };
 
-DEFINE EVENT OVERWRITE upward_propagation_trigger ON TABLE rebase_group WHEN $event THEN {
+DEFINE EVENT OVERWRITE upward_propagation_trigger ON TABLE stocksense_group WHEN $event THEN {
     IF $before.parents != $after.parents {
         LET $parents_to_ping = array::union($before.parents ?? [], $after.parents ?? []);
         IF $parents_to_ping { UPDATE $parents_to_ping; };
@@ -649,7 +633,7 @@ WHEN $event IN ['CREATE', 'UPDATE', 'DELETE'] THEN {
     };
 };
 
-DEFINE EVENT OVERWRITE authentication_password_state ON TABLE rebase_user
+DEFINE EVENT OVERWRITE authentication_password_state ON TABLE stocksense_user
 WHEN $event = 'UPDATE' AND $before.password != $after.password THEN {
     UPDATE $after.id SET authentication_revision = $before.authentication_revision + 1;
     DELETE authentication_challenge WHERE principal = $after.id;

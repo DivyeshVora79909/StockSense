@@ -1,5 +1,5 @@
--- REBASE: root permissions
-UPDATE rebase_group:root SET role = [
+-- STOCKSENSE: root permissions
+UPDATE stocksense_group:root SET role = [
     'node_create',
     'node_select',
     'node_update',

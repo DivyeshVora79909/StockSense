@@ -1,4 +1,4 @@
--- REBASE: temporal trees and field dependencies
+-- STOCKSENSE: temporal trees and field dependencies
 -- Shared intrusive AVL. Business records own slots; owner records own roots.
 -- Private mutation functions execute only inside the source write transaction.
 -- Chronology and causal dependency links are independent of rotation topology.
@@ -314,7 +314,7 @@ DEFINE FUNCTION OVERWRITE fn::tree::select($owner: object, $k: any, $dependent: 
 -- Passing [value] gives a boundary before all ties at that primary value.
 DEFINE FUNCTION OVERWRITE fn::tree::before($owner: object, $key: array) {
     LET $head = fn::tree::get($owner);
-    IF !fn::tree::valid_key($key, fn::rebase::root_key_type($owner), false) { THROW 'TREE_READ_KEY'; };
+    IF !fn::tree::valid_key($key, fn::stocksense::root_key_type($owner), false) { THROW 'TREE_READ_KEY'; };
     LET $result = array::range(0, (fn::tree::get($head.root).height ?? 0) + 1).fold(
         { cursor: $head.root, summary: fn::tree::empty() }, |$state, $_| {
             IF $state.cursor = NONE { RETURN $state; };
@@ -335,7 +335,7 @@ DEFINE FUNCTION OVERWRITE fn::tree::before($owner: object, $key: array) {
 -- At most two boundary paths are expanded; the stack never holds a subtree.
 DEFINE FUNCTION OVERWRITE fn::tree::range($owner: object, $lower: array, $upper: array) {
     LET $head = fn::tree::get($owner);
-    LET $key_type = fn::rebase::root_key_type($owner);
+    LET $key_type = fn::stocksense::root_key_type($owner);
     IF !fn::tree::valid_key($lower, $key_type, false) OR !fn::tree::valid_key($upper, $key_type, false) {
         THROW 'TREE_READ_KEY';
     };
@@ -416,7 +416,7 @@ DEFINE FUNCTION OVERWRITE fn::tree::coalesce($members: array) {
     IF array::len(array::distinct($present.map(|$m| $m.link))) != array::len($present) { THROW 'TREE_DUPLICATE_MEMBERSHIP'; };
     LET $ordered = array::flatten(array::distinct($present.map(|$m| $m.link.rid)).map(|$rid| {
         LET $source = $present.filter(|$m| $m.link.rid = $rid);
-        LET $slots = fn::rebase::slots($rid);
+        LET $slots = fn::stocksense::slots($rid);
         IF $source.any(|$m| !($m.link.slot IN $slots)) { THROW 'TREE_INVALID_MEMBERSHIP'; };
         RETURN $slots.map(|$slot| $source.filter(|$m| $m.link.slot = $slot)[0]).filter(|$m| $m != NONE);
     }));
@@ -455,11 +455,11 @@ DEFINE FUNCTION OVERWRITE fn::tree::sync($rid: record, $before: option<object>, 
     -- Validate EVERY projection before coalescing can discard a slot identity.
     FOR $member IN $members.filter(|$m| $m != NONE) {
         IF $member.link.rid != $rid OR !($member.link.slot IN $slots)
-            OR !fn::rebase::membership_allowed($member.link, $member.owner) OR $member.link = $member.owner
+            OR !fn::stocksense::membership_allowed($member.link, $member.owner) OR $member.link = $member.owner
             OR $member.value.count != 1 OR $member.value.first != $member.key OR $member.value.last != $member.key {
             THROW 'TREE_INVALID_MEMBERSHIP';
         };
-        LET $key_type = fn::rebase::root_key_type($member.owner);
+        LET $key_type = fn::stocksense::root_key_type($member.owner);
         IF !fn::tree::valid_key($member.key, $key_type, true)
             OR $member.key[1] != <string>$rid OR $member.key[2] != $member.link.slot {
             THROW 'TREE_MEMBERSHIP_KEY';
@@ -523,7 +523,7 @@ DEFINE FUNCTION OVERWRITE fn::tree::sync($rid: record, $before: option<object>, 
     RETURN { owners: $owners, records: [] };
 } PERMISSIONS NONE;
 
-DEFINE FUNCTION OVERWRITE fn::rebase::work($items: array) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::work($items: array) {
     RETURN {
         owners: array::distinct(array::flatten($items.map(|$w| $w.owners ?? []))),
         records: array::distinct(array::flatten($items.map(|$w| $w.records ?? [])))
@@ -533,34 +533,34 @@ DEFINE FUNCTION OVERWRITE fn::rebase::work($items: array) {
 -- Reconcile schema-owned outputs by stable (source, role) record IDs. Managed
 -- output table events skip their own finish; this outer refresh returns every
 -- child image so all trees and guards settle in the source operation.
-DEFINE FUNCTION OVERWRITE fn::rebase::sync_required_outputs($source: record, $desired: array) {
-    LET $existing = fn::rebase::managed_outputs($source);
+DEFINE FUNCTION OVERWRITE fn::stocksense::sync_required_outputs($source: record, $desired: array) {
+    LET $existing = fn::stocksense::managed_outputs($source);
     LET $source_row = SELECT * FROM ONLY $source;
-    LET $dependencies = $source_row.rebase_dependency_sources ?? [];
-    LET $reachable = array::flatten($dependencies.{..+collect}.rebase_dependency_sources);
+    LET $dependencies = $source_row.stocksense_dependency_sources ?? [];
+    LET $reachable = array::flatten($dependencies.{..+collect}.stocksense_dependency_sources);
     LET $dependency_targets = array::distinct(array::concat($dependencies, $reachable));
     LET $roles = $desired.map(|$output| $output.role);
     LET $ids = $desired.map(|$output| $output.id);
-    IF array::len(array::distinct($roles)) != array::len($roles) { THROW 'REBASE_REQUIRED_DUPLICATE_ROLE'; };
-    IF array::len(array::distinct($ids)) != array::len($ids) { THROW 'REBASE_REQUIRED_DUPLICATE_ID'; };
+    IF array::len(array::distinct($roles)) != array::len($roles) { THROW 'STOCKSENSE_REQUIRED_DUPLICATE_ROLE'; };
+    IF array::len(array::distinct($ids)) != array::len($ids) { THROW 'STOCKSENSE_REQUIRED_DUPLICATE_ID'; };
     LET $contracts = $desired.map(|$output| {
-        IF !fn::rebase::is_managed_output_table(record::tb($output.id)) {
-            THROW 'REBASE_REQUIRED_OUTPUT_TABLE';
+        IF !fn::stocksense::is_managed_output_table(record::tb($output.id)) {
+            THROW 'STOCKSENSE_REQUIRED_OUTPUT_TABLE';
         };
         IF $output.id != type::record(record::tb($output.id), [$source, $output.role]) {
-            THROW 'REBASE_REQUIRED_OUTPUT_IDENTITY';
+            THROW 'STOCKSENSE_REQUIRED_OUTPUT_IDENTITY';
         };
         LET $candidate = object::extend($output.data, {
-            id: $output.id, rebase_managed_source: <string>$source, rebase_managed_role: $output.role
+            id: $output.id, stocksense_managed_source: <string>$source, stocksense_managed_role: $output.role
         });
-        LET $members = fn::rebase::members($candidate);
+        LET $members = fn::stocksense::members($candidate);
         IF $members.any(|$member| $member != NONE AND $member.owner.rid IN $dependency_targets) {
-            THROW 'REBASE_REQUIRED_OUTPUT_FEEDBACK';
+            THROW 'STOCKSENSE_REQUIRED_OUTPUT_FEEDBACK';
         };
         LET $before = SELECT * FROM ONLY $output.id;
-        IF $before != NONE AND ($before.rebase_managed_source != <string>$source
-            OR $before.rebase_managed_role != $output.role) {
-            THROW 'REBASE_REQUIRED_OUTPUT_COLLISION';
+        IF $before != NONE AND ($before.stocksense_managed_source != <string>$source
+            OR $before.stocksense_managed_role != $output.role) {
+            THROW 'STOCKSENSE_REQUIRED_OUTPUT_COLLISION';
         };
         RETURN $output;
     });
@@ -569,22 +569,22 @@ DEFINE FUNCTION OVERWRITE fn::rebase::sync_required_outputs($source: record, $de
     LET $writes = $contracts.map(|$output| {
         LET $before = SELECT * FROM ONLY $output.id;
         LET $content = object::extend($output.data, {
-            rebase_managed_source: <string>$source, rebase_managed_role: $output.role
+            stocksense_managed_source: <string>$source, stocksense_managed_role: $output.role
         });
         IF $before = NONE {
             CREATE $output.id CONTENT $content RETURN NONE;
         } ELSE {
             UPDATE $output.id MERGE $content RETURN NONE;
         };
-        RETURN fn::rebase::refresh($output.id, $before, false);
+        RETURN fn::stocksense::refresh($output.id, $before, false);
     });
     LET $removed_ids = $existing.filter(|$output| !($output.id IN $ids)).map(|$output| $output.id);
     LET $removed = $removed_ids.map(|$id| {
         LET $before = SELECT * FROM ONLY $id;
         IF $before != NONE { DELETE $id RETURN NONE; };
-        RETURN fn::rebase::refresh($id, $before, false);
+        RETURN fn::stocksense::refresh($id, $before, false);
     });
-    RETURN fn::rebase::work(array::concat($writes, $removed));
+    RETURN fn::stocksense::work(array::concat($writes, $removed));
 } PERMISSIONS NONE;
 
 -- Enumerate only prefix consumers, never every fixed delta in the suffix.
@@ -593,7 +593,7 @@ DEFINE FUNCTION OVERWRITE fn::rebase::sync_required_outputs($source: record, $de
 DEFINE FUNCTION OVERWRITE fn::tree::drain($owner: object) {
     LET $head = fn::tree::get($owner);
     IF $head.dirty = NONE OR $head.refreshing = true { RETURN { owners: [], records: [] }; };
-    IF fn::rebase::root_key_type($owner) = 'int' {
+    IF fn::stocksense::root_key_type($owner) = 'int' {
         fn::tree::patch($owner, { dirty: NONE });
         RETURN { owners: [], records: [] };
     };
@@ -604,18 +604,18 @@ DEFINE FUNCTION OVERWRITE fn::tree::drain($owner: object) {
     LET $work = $candidates.map(|$link| {
         LET $node = fn::tree::get($link);
         fn::tree::patch($owner, { cursor: $node.key });
-        RETURN fn::rebase::refresh($link.rid, (SELECT * FROM ONLY $link.rid), true);
+        RETURN fn::stocksense::refresh($link.rid, (SELECT * FROM ONLY $link.rid), true);
     });
     fn::tree::patch($owner, { refreshing: false, cursor: NONE, dirty: NONE });
-    RETURN fn::rebase::work($work);
+    RETURN fn::stocksense::work($work);
 } PERMISSIONS NONE;
 
 -- Generated derive/members/dependents/validate adapters below contain only
 -- schema expressions. No persisted queue, registry, or per-membership rows.
-DEFINE FUNCTION OVERWRITE fn::rebase::refresh($rid: record, $before: option<object>, $sweep: bool) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::refresh($rid: record, $before: option<object>, $sweep: bool) {
     LET $current = SELECT * FROM ONLY $rid;
     IF $current != NONE {
-        LET $patch = fn::rebase::derive($current);
+        LET $patch = fn::stocksense::derive($current);
         IF object::len($patch) > 0 AND object::entries($patch).any(|$p| $current[$p[0]] != $p[1]) {
             UPDATE $rid PATCH object::entries($patch).map(|$p| {
                 RETURN IF $p[1] = NONE THEN { op: 'remove', path: '/' + $p[0] }
@@ -625,32 +625,32 @@ DEFINE FUNCTION OVERWRITE fn::rebase::refresh($rid: record, $before: option<obje
     };
     LET $after = SELECT * FROM ONLY $rid;
     IF $after != NONE {
-        LET $sources = $after.rebase_dependency_sources ?? [];
-        LET $reachable = array::flatten($sources.{..+collect}.rebase_dependency_sources);
-        IF $rid IN $sources OR $rid IN $reachable { THROW 'REBASE_DEPENDENCY_CYCLE'; };
+        LET $sources = $after.stocksense_dependency_sources ?? [];
+        LET $reachable = array::flatten($sources.{..+collect}.stocksense_dependency_sources);
+        IF $rid IN $sources OR $rid IN $reachable { THROW 'STOCKSENSE_DEPENDENCY_CYCLE'; };
     };
-    LET $own = fn::tree::sync($rid, $before, fn::rebase::members($after), fn::rebase::slots($rid));
-    LET $required = IF fn::rebase::has_required_outputs($rid) THEN
-        fn::rebase::sync_required_outputs($rid, fn::rebase::required_outputs($after))
+    LET $own = fn::tree::sync($rid, $before, fn::stocksense::members($after), fn::stocksense::slots($rid));
+    LET $required = IF fn::stocksense::has_required_outputs($rid) THEN
+        fn::stocksense::sync_required_outputs($rid, fn::stocksense::required_outputs($after))
         ELSE { owners: [], records: [] } END;
-    LET $children = fn::rebase::dependents($before, $after);
+    LET $children = fn::stocksense::dependents($before, $after);
     LET $ordered = SELECT id, a_effective_at FROM $children ORDER BY a_effective_at, id;
-    LET $down = $ordered.map(|$child| fn::rebase::refresh($child.id, (SELECT * FROM ONLY $child.id), false));
-    LET $work = fn::rebase::work(array::concat([{ owners: $own.owners, records: [$rid] }, $required], $down));
+    LET $down = $ordered.map(|$child| fn::stocksense::refresh($child.id, (SELECT * FROM ONLY $child.id), false));
+    LET $work = fn::stocksense::work(array::concat([{ owners: $own.owners, records: [$rid] }, $required], $down));
     LET $temporal = IF $sweep THEN $work.owners.map(|$owner| fn::tree::drain($owner)) ELSE [] END;
-    RETURN fn::rebase::work(array::concat([$work], $temporal));
+    RETURN fn::stocksense::work(array::concat([$work], $temporal));
 } PERMISSIONS NONE;
 
 -- Publish all roots as one phase. Guards run after causal recalculation, so a
 -- parent edit never validates against still-stale descendant contributions.
-DEFINE FUNCTION OVERWRITE fn::rebase::finish($work: object) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::finish($work: object) {
     LET $published = $work.owners.filter(|$o| (SELECT VALUE id FROM ONLY $o.rid) != NONE).map(|$o| fn::tree::publish($o));
-    LET $children = array::distinct(array::flatten($published.map(|$p| fn::rebase::dependents($p.before, $p.after))));
-    LET $down = fn::rebase::work($children.map(|$rid| fn::rebase::refresh($rid, (SELECT * FROM ONLY $rid), true)));
-    IF array::len($down.owners) > 0 OR array::len($down.records) > 0 { fn::rebase::finish($down); };
+    LET $children = array::distinct(array::flatten($published.map(|$p| fn::stocksense::dependents($p.before, $p.after))));
+    LET $down = fn::stocksense::work($children.map(|$rid| fn::stocksense::refresh($rid, (SELECT * FROM ONLY $rid), true)));
+    IF array::len($down.owners) > 0 OR array::len($down.records) > 0 { fn::stocksense::finish($down); };
     FOR $rid IN array::distinct(array::concat($work.records, $work.owners.map(|$o| $o.rid))) {
         LET $row = SELECT * FROM ONLY $rid;
-        IF $row != NONE { fn::rebase::validate($row); };
+        IF $row != NONE { fn::stocksense::validate($row); };
     };
 } PERMISSIONS NONE;
 
@@ -836,84 +836,84 @@ DEFINE FIELD OVERWRITE z_position.summary.spans ON stock_ledger TYPE object FLEX
 DEFINE FIELD OVERWRITE z_position.summary.spans.* ON stock_ledger TYPE { min: datetime, max: datetime };
 
 
-DEFINE FUNCTION OVERWRITE fn::rebase::root_allowed($link: object) { RETURN (record::tb($link.rid) = 'stock_location' AND $link.slot = 'z_stock') OR (record::tb($link.rid) = 'product' AND $link.slot = 'z_stock') OR (record::tb($link.rid) = 'stock_position' AND $link.slot = 'z_stock'); } PERMISSIONS FULL;
-DEFINE FUNCTION OVERWRITE fn::rebase::root_key_type($link: object) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::root_allowed($link: object) { RETURN (record::tb($link.rid) = 'stock_location' AND $link.slot = 'z_stock') OR (record::tb($link.rid) = 'product' AND $link.slot = 'z_stock') OR (record::tb($link.rid) = 'stock_position' AND $link.slot = 'z_stock'); } PERMISSIONS FULL;
+DEFINE FUNCTION OVERWRITE fn::stocksense::root_key_type($link: object) {
 IF (record::tb($link.rid) = 'stock_location' AND $link.slot = 'z_stock') { RETURN 'datetime'; };
 IF (record::tb($link.rid) = 'product' AND $link.slot = 'z_stock') { RETURN 'datetime'; };
 IF (record::tb($link.rid) = 'stock_position' AND $link.slot = 'z_stock') { RETURN 'datetime'; };
 THROW 'TREE_UNKNOWN_ROOT'; } PERMISSIONS FULL;
-DEFINE FUNCTION OVERWRITE fn::rebase::membership_allowed($link: object, $owner: object) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::membership_allowed($link: object, $owner: object) {
 IF record::tb($link.rid) = 'stock_ledger' { RETURN ($link.slot = 'z_product' AND ((record::tb($owner.rid) = 'product' AND $owner.slot = 'z_stock'))) OR ($link.slot = 'z_location' AND ((record::tb($owner.rid) = 'stock_location' AND $owner.slot = 'z_stock'))) OR ($link.slot = 'z_position' AND ((record::tb($owner.rid) = 'stock_position' AND $owner.slot = 'z_stock'))); };
 RETURN false; } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::slots($rid: record) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::slots($rid: record) {
 IF record::tb($rid) = 'stock_ledger' { RETURN ['z_product', 'z_location', 'z_position']; };
 RETURN []; } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::members($row: option<object>) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::members($row: option<object>) {
 IF $row = NONE { RETURN []; };
 IF record::tb($row.id) = 'stock_ledger' { RETURN fn::stocksense::ledger_members($row); };
 RETURN []; } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::validate($row: object) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::validate($row: object) {
 IF record::tb($row.id) = 'stock_location' { fn::stocksense::location_validate($row); };
 IF record::tb($row.id) = 'product' { fn::stocksense::product_validate($row); };
 IF record::tb($row.id) = 'stock_position' { fn::stocksense::position_validate($row); };
 IF record::tb($row.id) = 'stock_operation' { fn::stocksense::operation_validate($row); };
 } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::has_required_outputs($rid: record) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::has_required_outputs($rid: record) {
 RETURN record::tb($rid) IN ['stock_operation'];
 } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::required_outputs($row: option<object>) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::required_outputs($row: option<object>) {
 IF $row = NONE { RETURN []; };
 IF record::tb($row.id) = 'stock_operation' { RETURN fn::stocksense::operation_outputs($row); };
 RETURN []; } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::is_managed_output_table($name: string) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::is_managed_output_table($name: string) {
 RETURN $name IN ['stock_ledger'];
 } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::managed_outputs($source: record) {
-LET $outputs_0 = SELECT * FROM stock_ledger WHERE rebase_managed_source = <string>$source;
+DEFINE FUNCTION OVERWRITE fn::stocksense::managed_outputs($source: record) {
+LET $outputs_0 = SELECT * FROM stock_ledger WHERE stocksense_managed_source = <string>$source;
 RETURN array::concat($outputs_0);
 } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::derive($row: object) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::derive($row: object) {
 RETURN {}; } PERMISSIONS NONE;
-DEFINE FUNCTION OVERWRITE fn::rebase::dependents($before: option<object>, $after: option<object>) {
+DEFINE FUNCTION OVERWRITE fn::stocksense::dependents($before: option<object>, $after: option<object>) {
 LET $rid = $after.id ?? $before.id;
 RETURN []; } PERMISSIONS NONE;
 
 
-DEFINE EVENT OVERWRITE rebase_refresh ON stock_location
+DEFINE EVENT OVERWRITE stocksense_refresh ON stock_location
 WHEN $event != 'UPDATE' OR ($before.warehouse != $after.warehouse OR $before.parent != $after.parent OR $before.name != $after.name OR $before.code != $after.code OR $before.active != $after.active OR $before.owned_by != $after.owned_by) OR $before.system_ping != $after.system_ping THEN {
     IF $event = 'DELETE' { IF $before.z_stock.summary.count != array::len([].filter(|$slot| $before[$slot].owner = { rid: $before.id, slot: 'z_stock' })) { THROW 'TREE_OWNER_NOT_EMPTY'; }; };
     LET $before_image = IF $event = 'CREATE' THEN NONE ELSE $before END;
-    fn::rebase::finish(fn::rebase::refresh($after.id ?? $before.id, $before_image, true));
+    fn::stocksense::finish(fn::stocksense::refresh($after.id ?? $before.id, $before_image, true));
 };
-DEFINE EVENT OVERWRITE rebase_refresh ON product
+DEFINE EVENT OVERWRITE stocksense_refresh ON product
 WHEN $event != 'UPDATE' OR ($before.name != $after.name OR $before.sku != $after.sku OR $before.category != $after.category OR $before.unit != $after.unit OR $before.reorder_point != $after.reorder_point OR $before.active != $after.active OR $before.owned_by != $after.owned_by) OR $before.system_ping != $after.system_ping THEN {
     IF $event = 'DELETE' { IF $before.z_stock.summary.count != array::len([].filter(|$slot| $before[$slot].owner = { rid: $before.id, slot: 'z_stock' })) { THROW 'TREE_OWNER_NOT_EMPTY'; }; };
     LET $before_image = IF $event = 'CREATE' THEN NONE ELSE $before END;
-    fn::rebase::finish(fn::rebase::refresh($after.id ?? $before.id, $before_image, true));
+    fn::stocksense::finish(fn::stocksense::refresh($after.id ?? $before.id, $before_image, true));
 };
-DEFINE EVENT OVERWRITE rebase_refresh ON stock_position
+DEFINE EVENT OVERWRITE stocksense_refresh ON stock_position
 WHEN $event != 'UPDATE' OR ($before.product != $after.product OR $before.location != $after.location OR $before.owned_by != $after.owned_by) OR $before.system_ping != $after.system_ping THEN {
     IF $event = 'DELETE' { IF $before.z_stock.summary.count != array::len([].filter(|$slot| $before[$slot].owner = { rid: $before.id, slot: 'z_stock' })) { THROW 'TREE_OWNER_NOT_EMPTY'; }; };
     LET $before_image = IF $event = 'CREATE' THEN NONE ELSE $before END;
-    fn::rebase::finish(fn::rebase::refresh($after.id ?? $before.id, $before_image, true));
+    fn::stocksense::finish(fn::stocksense::refresh($after.id ?? $before.id, $before_image, true));
 };
-DEFINE EVENT OVERWRITE rebase_refresh ON stock_operation
+DEFINE EVENT OVERWRITE stocksense_refresh ON stock_operation
 WHEN $event != 'UPDATE' OR ($before.kind != $after.kind OR $before.status != $after.status OR $before.reference != $after.reference OR $before.party_name != $after.party_name OR $before.location != $after.location OR $before.from_location != $after.from_location OR $before.to_location != $after.to_location OR $before.effective_at != $after.effective_at OR $before.lines != $after.lines OR $before.created_by_name != $after.created_by_name OR $before.owned_by != $after.owned_by) OR $before.system_ping != $after.system_ping THEN {
     IF $event = 'DELETE' {  };
     LET $before_image = IF $event = 'CREATE' THEN NONE ELSE $before END;
-    fn::rebase::finish(fn::rebase::refresh($after.id ?? $before.id, $before_image, true));
+    fn::stocksense::finish(fn::stocksense::refresh($after.id ?? $before.id, $before_image, true));
 };
-DEFINE EVENT OVERWRITE rebase_refresh ON stock_ledger
+DEFINE EVENT OVERWRITE stocksense_refresh ON stock_ledger
 WHEN $event != 'UPDATE' OR ($before.operation != $after.operation OR $before.product != $after.product OR $before.location != $after.location OR $before.position != $after.position OR $before.kind != $after.kind OR $before.quantity_delta != $after.quantity_delta OR $before.effective_at != $after.effective_at OR $before.owned_by != $after.owned_by) OR $before.system_ping != $after.system_ping THEN {
     IF $event = 'DELETE' {  };
     LET $before_image = IF $event = 'CREATE' THEN NONE ELSE $before END;
-    IF ($after.rebase_managed_source ?? $before.rebase_managed_source) = NONE { fn::rebase::finish(fn::rebase::refresh($after.id ?? $before.id, $before_image, true)); };
+    IF ($after.stocksense_managed_source ?? $before.stocksense_managed_source) = NONE { fn::stocksense::finish(fn::stocksense::refresh($after.id ?? $before.id, $before_image, true)); };
 };
 
 DEFINE FUNCTION OVERWRITE fn::tree::read($owner: record, $slot: string, $operation: string, $argument: array) {
     IF $auth != NONE AND !((record::tb($owner) = 'stock_location' AND $slot = 'z_stock' AND ('stock_location_select' IN $auth.permissions AND (!!$owner.visibility OR $owner.readers_index CONTAINSANY $auth.z_access_index OR <string>$owner.owned_by IN $auth.z_access_index))) OR (record::tb($owner) = 'product' AND $slot = 'z_stock' AND ('product_select' IN $auth.permissions AND (!!$owner.visibility OR $owner.readers_index CONTAINSANY $auth.z_access_index OR <string>$owner.owned_by IN $auth.z_access_index))) OR (record::tb($owner) = 'stock_position' AND $slot = 'z_stock' AND ('stock_position_select' IN $auth.permissions AND (!!$owner.visibility OR $owner.readers_index CONTAINSANY $auth.z_access_index OR <string>$owner.owned_by IN $auth.z_access_index)))) { THROW 'Tree read not allowed'; };
     LET $link = { rid: $owner, slot: $slot };
-    LET $key_type = fn::rebase::root_key_type($link);
+    LET $key_type = fn::stocksense::root_key_type($link);
     IF $operation = 'summary' {
         IF array::len($argument) != 0 { THROW 'TREE_READ_ARGUMENT'; };
         RETURN fn::tree::get($link).summary;

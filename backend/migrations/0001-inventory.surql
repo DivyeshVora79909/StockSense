@@ -1,47 +1,46 @@
 
--- REBASE: raw schema
+-- STOCKSENSE: raw schema
 -- StockSense keeps editable operational documents separate from the managed
 -- stock ledger. A validated operation atomically owns its ledger effects.
 
 DEFINE TABLE OVERWRITE unit_of_measure SCHEMAFULL;
 
 DEFINE FIELD OVERWRITE code ON unit_of_measure TYPE string
-    ASSERT string::matches($value, /^[A-Za-z][A-Za-z0-9._-]{0,15}$/) COMMENT '@rebase-audit';
+    ASSERT string::matches($value, /^[A-Za-z][A-Za-z0-9._-]{0,15}$/);
 
-DEFINE FIELD OVERWRITE name ON unit_of_measure TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE name ON unit_of_measure TYPE string ASSERT string::len(string::trim($value)) > 0;
 
 DEFINE INDEX OVERWRITE unit_of_measure_code ON unit_of_measure FIELDS code UNIQUE;
 
 DEFINE TABLE OVERWRITE product_category SCHEMAFULL;
 
-DEFINE FIELD OVERWRITE name ON product_category TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE name ON product_category TYPE string ASSERT string::len(string::trim($value)) > 0;
 
 DEFINE INDEX OVERWRITE product_category_name ON product_category FIELDS name UNIQUE;
 
 DEFINE TABLE OVERWRITE warehouse SCHEMAFULL;
 
-DEFINE FIELD OVERWRITE name ON warehouse TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE name ON warehouse TYPE string ASSERT string::len(string::trim($value)) > 0;
 
-DEFINE FIELD OVERWRITE code ON warehouse TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE code ON warehouse TYPE string ASSERT string::len(string::trim($value)) > 0;
 
-DEFINE FIELD OVERWRITE active ON warehouse TYPE bool DEFAULT true COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE active ON warehouse TYPE bool DEFAULT true;
 
 DEFINE INDEX OVERWRITE warehouse_code ON warehouse FIELDS code UNIQUE;
 
-DEFINE TABLE OVERWRITE stock_location SCHEMAFULL
-    COMMENT '@rebase-validate fn::stocksense::location_validate';
+DEFINE TABLE OVERWRITE stock_location SCHEMAFULL;
 
-DEFINE FIELD OVERWRITE warehouse ON stock_location TYPE record<warehouse> REFERENCE ON DELETE REJECT READONLY COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE warehouse ON stock_location TYPE record<warehouse> REFERENCE ON DELETE REJECT READONLY;
 
-DEFINE FIELD OVERWRITE parent ON stock_location TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE parent ON stock_location TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT;
 
-DEFINE FIELD OVERWRITE name ON stock_location TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE name ON stock_location TYPE string ASSERT string::len(string::trim($value)) > 0;
 
-DEFINE FIELD OVERWRITE code ON stock_location TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE code ON stock_location TYPE string ASSERT string::len(string::trim($value)) > 0;
 
-DEFINE FIELD OVERWRITE active ON stock_location TYPE bool DEFAULT true COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE active ON stock_location TYPE bool DEFAULT true;
 
-DEFINE FIELD OVERWRITE z_stock ON stock_location TYPE object COMMENT '@rebase-tree-root @rebase-tree-key datetime';
+DEFINE FIELD OVERWRITE z_stock ON stock_location TYPE object;
 
 DEFINE INDEX OVERWRITE stock_location_code ON stock_location FIELDS warehouse, code UNIQUE;
 
@@ -51,22 +50,21 @@ DEFINE FUNCTION OVERWRITE fn::stocksense::location_validate($row: object) {
     IF $quantity < 0dec { THROW 'STOCKSENSE_LOCATION_NEGATIVE_STOCK'; };
 } PERMISSIONS FULL;
 
-DEFINE TABLE OVERWRITE product SCHEMAFULL
-    COMMENT '@rebase-validate fn::stocksense::product_validate';
+DEFINE TABLE OVERWRITE product SCHEMAFULL;
 
-DEFINE FIELD OVERWRITE name ON product TYPE string ASSERT string::len(string::trim($value)) > 0 COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE name ON product TYPE string ASSERT string::len(string::trim($value)) > 0;
 
-DEFINE FIELD OVERWRITE sku ON product TYPE string ASSERT string::len(string::trim($value)) > 0 READONLY COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE sku ON product TYPE string ASSERT string::len(string::trim($value)) > 0 READONLY;
 
-DEFINE FIELD OVERWRITE category ON product TYPE option<record<product_category>> DEFAULT NONE REFERENCE ON DELETE REJECT COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE category ON product TYPE option<record<product_category>> DEFAULT NONE REFERENCE ON DELETE REJECT;
 
-DEFINE FIELD OVERWRITE unit ON product TYPE record<unit_of_measure> REFERENCE ON DELETE REJECT READONLY COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE unit ON product TYPE record<unit_of_measure> REFERENCE ON DELETE REJECT READONLY;
 
-DEFINE FIELD OVERWRITE reorder_point ON product TYPE decimal DEFAULT 0dec ASSERT $value >= 0dec COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE reorder_point ON product TYPE decimal DEFAULT 0dec ASSERT $value >= 0dec;
 
-DEFINE FIELD OVERWRITE active ON product TYPE bool DEFAULT true COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE active ON product TYPE bool DEFAULT true;
 
-DEFINE FIELD OVERWRITE z_stock ON product TYPE object COMMENT '@rebase-tree-root @rebase-tree-key datetime';
+DEFINE FIELD OVERWRITE z_stock ON product TYPE object;
 
 DEFINE INDEX OVERWRITE product_sku ON product FIELDS sku UNIQUE;
 
@@ -75,14 +73,13 @@ DEFINE FUNCTION OVERWRITE fn::stocksense::product_validate($row: object) {
     IF ($summary.measures.quantity.min_prefix ?? 0dec) < 0dec { THROW 'STOCKSENSE_PRODUCT_NEGATIVE_STOCK'; };
 } PERMISSIONS FULL;
 
-DEFINE TABLE OVERWRITE stock_position SCHEMAFULL
-    COMMENT '@rebase-validate fn::stocksense::position_validate';
+DEFINE TABLE OVERWRITE stock_position SCHEMAFULL;
 
-DEFINE FIELD OVERWRITE product ON stock_position TYPE record<product> REFERENCE ON DELETE REJECT READONLY COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE product ON stock_position TYPE record<product> REFERENCE ON DELETE REJECT READONLY;
 
-DEFINE FIELD OVERWRITE location ON stock_position TYPE record<stock_location> REFERENCE ON DELETE REJECT READONLY COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE location ON stock_position TYPE record<stock_location> REFERENCE ON DELETE REJECT READONLY;
 
-DEFINE FIELD OVERWRITE z_stock ON stock_position TYPE object COMMENT '@rebase-tree-root @rebase-tree-key datetime';
+DEFINE FIELD OVERWRITE z_stock ON stock_position TYPE object;
 
 DEFINE INDEX OVERWRITE stock_position_dimension ON stock_position FIELDS product, location UNIQUE;
 
@@ -162,24 +159,23 @@ DEFINE FUNCTION OVERWRITE fn::stocksense::operation_validate($row: object) {
         ($row.from_location.active != true OR $row.to_location.active != true) { THROW 'STOCKSENSE_LOCATION_INACTIVE'; };
 } PERMISSIONS FULL;
 
-DEFINE TABLE OVERWRITE stock_operation SCHEMAFULL
-    COMMENT '@rebase-required-outputs fn::stocksense::operation_outputs @rebase-validate fn::stocksense::operation_validate';
+DEFINE TABLE OVERWRITE stock_operation SCHEMAFULL;
 
-DEFINE FIELD OVERWRITE kind ON stock_operation TYPE string ASSERT $value IN ['receipt', 'delivery', 'transfer', 'adjustment'] COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE kind ON stock_operation TYPE string ASSERT $value IN ['receipt', 'delivery', 'transfer', 'adjustment'];
 
-DEFINE FIELD OVERWRITE status ON stock_operation TYPE string DEFAULT 'draft' ASSERT $value IN ['draft', 'waiting', 'ready', 'done', 'canceled'] COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE status ON stock_operation TYPE string DEFAULT 'draft' ASSERT $value IN ['draft', 'waiting', 'ready', 'done', 'canceled'];
 
-DEFINE FIELD OVERWRITE reference ON stock_operation TYPE option<string> DEFAULT NONE COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE reference ON stock_operation TYPE option<string> DEFAULT NONE;
 
-DEFINE FIELD OVERWRITE party_name ON stock_operation TYPE option<string> DEFAULT NONE COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE party_name ON stock_operation TYPE option<string> DEFAULT NONE;
 
-DEFINE FIELD OVERWRITE location ON stock_operation TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE location ON stock_operation TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT;
 
-DEFINE FIELD OVERWRITE from_location ON stock_operation TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE from_location ON stock_operation TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT;
 
-DEFINE FIELD OVERWRITE to_location ON stock_operation TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE to_location ON stock_operation TYPE option<record<stock_location>> DEFAULT NONE REFERENCE ON DELETE REJECT;
 
-DEFINE FIELD OVERWRITE effective_at ON stock_operation TYPE datetime DEFAULT time::now() COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE effective_at ON stock_operation TYPE datetime DEFAULT time::now();
 
 DEFINE FIELD OVERWRITE lines ON stock_operation TYPE array<object> DEFAULT [];
 
@@ -191,14 +187,13 @@ DEFINE FIELD OVERWRITE lines.*.quantity ON stock_operation TYPE option<decimal> 
 
 DEFINE FIELD OVERWRITE lines.*.counted_quantity ON stock_operation TYPE option<decimal> DEFAULT NONE;
 
-DEFINE FIELD OVERWRITE created_by_name ON stock_operation TYPE option<string> DEFAULT NONE COMMENT '@rebase-audit';
+DEFINE FIELD OVERWRITE created_by_name ON stock_operation TYPE option<string> DEFAULT NONE;
 
-DEFINE TABLE OVERWRITE stock_ledger SCHEMAFULL PERMISSIONS NONE
-    COMMENT '@rebase-managed-output @rebase-members fn::stocksense::ledger_members';
+DEFINE TABLE OVERWRITE stock_ledger SCHEMAFULL PERMISSIONS NONE;
 
-DEFINE FIELD OVERWRITE rebase_managed_source ON stock_ledger TYPE string COMMENT '@rebase-system';
+DEFINE FIELD OVERWRITE stocksense_managed_source ON stock_ledger TYPE string;
 
-DEFINE FIELD OVERWRITE rebase_managed_role ON stock_ledger TYPE string COMMENT '@rebase-system';
+DEFINE FIELD OVERWRITE stocksense_managed_role ON stock_ledger TYPE string;
 
 DEFINE FIELD OVERWRITE operation ON stock_ledger TYPE record<stock_operation> REFERENCE ON DELETE REJECT;
 
@@ -214,11 +209,11 @@ DEFINE FIELD OVERWRITE quantity_delta ON stock_ledger TYPE decimal;
 
 DEFINE FIELD OVERWRITE effective_at ON stock_ledger TYPE datetime;
 
-DEFINE FIELD OVERWRITE z_product ON stock_ledger TYPE option<object> COMMENT '@rebase-tree-node @rebase-tree-key datetime @rebase-tree-owner product.z_stock';
+DEFINE FIELD OVERWRITE z_product ON stock_ledger TYPE option<object>;
 
-DEFINE FIELD OVERWRITE z_location ON stock_ledger TYPE option<object> COMMENT '@rebase-tree-node @rebase-tree-key datetime @rebase-tree-owner stock_location.z_stock';
+DEFINE FIELD OVERWRITE z_location ON stock_ledger TYPE option<object>;
 
-DEFINE FIELD OVERWRITE z_position ON stock_ledger TYPE option<object> COMMENT '@rebase-tree-node @rebase-tree-key datetime @rebase-tree-owner stock_position.z_stock';
+DEFINE FIELD OVERWRITE z_position ON stock_ledger TYPE option<object>;
 
 DEFINE FUNCTION OVERWRITE fn::stocksense::ledger_members($row: object) {
     RETURN [
@@ -253,7 +248,7 @@ DEFINE FUNCTION OVERWRITE fn::stocksense::send_email_code($identity: record<auth
     IF $target = NONE { RETURN NONE; };
     LET $principal = (SELECT * FROM type::record($target.principal))[0];
     IF $principal = NONE OR $principal.login_access != true { RETURN NONE; };
-    LET $config = (SELECT * FROM rebase_email_delivery_config:stocksense)[0];
+    LET $config = (SELECT * FROM stocksense_email_delivery_config:stocksense)[0];
     IF $config = NONE OR $config.api_key = NONE { THROW 'STOCKSENSE_EMAIL_NOT_CONFIGURED'; };
     LET $prior = (SELECT * FROM authentication_challenge
         WHERE target = $target.id AND consumed_at = NONE)[0];
@@ -295,7 +290,7 @@ DEFINE ACCESS OVERWRITE stocksense_signup ON DATABASE TYPE RECORD
         IF !string::matches($username, /^[a-z0-9][a-z0-9_.-]{8,31}$/)
             OR !string::is_email($email_value) OR string::len($name_value) = 0
             OR string::len($workspace_value) = 0 OR string::len($password ?? '') < 8 { RETURN NONE; };
-        IF array::len(SELECT id FROM rebase_user WHERE username = $username) > 0
+        IF array::len(SELECT id FROM stocksense_user WHERE username = $username) > 0
             OR array::len(SELECT id FROM authentication_email WHERE address = $email_value) > 0 { RETURN NONE; };
         LET $roles = [
             'node_select',
@@ -307,9 +302,9 @@ DEFINE ACCESS OVERWRITE stocksense_signup ON DATABASE TYPE RECORD
             'product_select', 'product_create', 'product_update', 'product_delete',
             'stock_operation_select', 'stock_operation_create', 'stock_operation_update', 'stock_operation_delete'
         ];
-        LET $team = CREATE ONLY rebase_group SET name = $workspace_value,
-            role = $roles, parents = [rebase_group:root];
-        LET $user = CREATE ONLY rebase_user SET
+        LET $team = CREATE ONLY stocksense_group SET name = $workspace_value,
+            role = $roles, parents = [stocksense_group:root];
+        LET $user = CREATE ONLY stocksense_user SET
             name = $name_value, username = $username,
             password = crypto::argon2::generate($password), parents = [$team.id];
         CREATE ONLY authentication_email SET principal = $user.id,
@@ -321,7 +316,7 @@ DEFINE ACCESS OVERWRITE stocksense_signup ON DATABASE TYPE RECORD
     }
     SIGNIN {
         LET $identifier_value = string::lowercase(string::trim($identifier ?? ''));
-        LET $username_user = (SELECT VALUE id FROM rebase_user WHERE username = $identifier_value AND login_access = true)[0];
+        LET $username_user = (SELECT VALUE id FROM stocksense_user WHERE username = $identifier_value AND login_access = true)[0];
         LET $email_user = (SELECT VALUE principal FROM authentication_email
             WHERE address = $identifier_value AND verified_revision = revision AND principal.login_access = true)[0];
         LET $principal = IF $email_user != NONE THEN $email_user ELSE $username_user END;

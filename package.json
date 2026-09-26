@@ -1,0 +1,15 @@
+{
+  "name": "stocksense",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 5173 --bind 127.0.0.1 --directory frontend",
+    "db:bundle": "node scripts/bundle-migrations.mjs",
+    "db:validate": "npm run db:bundle && surreal validate backend/stocksense-install.surql",
+    "db:install": "npm run db:validate && surreal import --endpoint http://127.0.0.1:8000 --namespace stocksense --database stocksense backend/stocksense-install.surql"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,4 +1,4 @@
--- REBASE: record reference assertions
+-- STOCKSENSE: record reference assertions
 ALTER FIELD warehouse ON TABLE stock_location ASSERT record::exists($value);
 ALTER FIELD parent ON TABLE stock_location ASSERT $value = NONE OR record::exists($value);
 ALTER FIELD category ON TABLE product ASSERT $value = NONE OR record::exists($value);
