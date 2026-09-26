@@ -15,6 +15,7 @@ export default function App() {
   const [moves, setMoves] = useState(inventory.moves);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('All products');
+  const [locationFilter, setLocationFilter] = useState('All locations');
   const [modal, setModal] = useState('');
   const [toast, setToast] = useState('');
   const [connected, setConnected] = useState(false);
@@ -26,8 +27,9 @@ export default function App() {
   const lowStock = products.filter((product) => product.quantity <= product.minimum).length;
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesQuery = `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (filter === 'All products' || (filter === 'Low stock' ? product.quantity <= product.minimum : product.category === filter));
-  }), [products, query, filter]);
+    const matchesCategory = filter === 'All products' || (filter === 'Low stock' ? product.quantity <= product.minimum : product.category === filter);
+    return matchesQuery && matchesCategory && (locationFilter === 'All locations' || product.location === locationFilter);
+  }), [products, query, filter, locationFilter]);
   const visibleMoves = useMemo(() => moves.filter((move) => {
     const matchesType = historyType === 'All types' || move.type === historyType;
     const matchesQuery = `${move.product} ${move.sku} ${move.reference} ${move.location} ${move.toLocation || ''}`.toLowerCase().includes(historyQuery.toLowerCase());
@@ -126,11 +128,11 @@ export default function App() {
         <section className="content-grid">
           <div className="panel product-panel" id="products">
             <div className="panel-heading"><div><h2>Inventory overview</h2><p>Keep track of your products and stock levels.</p></div><button className="button button-small button-secondary" onClick={() => setModal('product')}><Plus size={15} />Add product</button></div>
-            <div className="table-toolbar"><div className="search-box"><Search size={16} /><input placeholder="Search products, SKU, or category..." value={query} onChange={(event) => setQuery(event.target.value)} />{query && <button className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={13} /></button>}</div><select aria-label="Filter products" value={filter} onChange={(event) => setFilter(event.target.value)}><option>All products</option><option>Low stock</option>{[...new Set(products.map((product) => product.category))].map((category) => <option key={category}>{category}</option>)}</select><button className="filter-button"><ListFilter size={15} />Filter</button></div>
+            <div className="table-toolbar"><div className="search-box"><Search size={16} /><input placeholder="Search products, SKU, or category..." value={query} onChange={(event) => setQuery(event.target.value)} />{query && <button className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={13} /></button>}</div><select aria-label="Filter products" value={filter} onChange={(event) => setFilter(event.target.value)}><option>All products</option><option>Low stock</option>{[...new Set(products.map((product) => product.category))].map((category) => <option key={category}>{category}</option>)}</select><select aria-label="Filter by location" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option>All locations</option>{[...new Set(products.map((product) => product.location))].sort().map((location) => <option key={location}>{location}</option>)}</select></div>
             <div className="table-scroll"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>LOCATION</th><th>IN STOCK</th><th>STATUS</th><th></th></tr></thead><tbody>{visibleProducts.map((product) => <tr key={product.id}>
               <td><div className="product-cell"><div className={`product-thumb ${product.color}`}>{product.symbol}</div><strong>{product.name}</strong></div></td><td className="muted-cell">{product.sku}</td><td><span className="category-pill">{product.category}</span></td><td><span className="location-cell"><MapPin size={13} />{product.location}</span></td><td><strong>{money(product.quantity)}</strong><span className="uom"> {product.unit}</span></td><td><StockStatus product={product} /></td><td><button className="row-more" aria-label={`More actions for ${product.name}`}><MoreHorizontal size={17} /></button></td>
             </tr>)}</tbody></table>{visibleProducts.length === 0 && <div className="empty-state">No products match your search.</div>}</div>
-            <div className="table-footer"><span>Showing <strong>{visibleProducts.length}</strong> of <strong>{products.length}</strong> products</span><button className="text-button" onClick={() => setFilter('All products')}>View all products <ArrowRight size={14} /></button></div>
+            <div className="table-footer"><span>Showing <strong>{visibleProducts.length}</strong> of <strong>{products.length}</strong> products</span><button className="text-button" onClick={() => { setFilter('All products'); setLocationFilter('All locations'); setQuery(''); }}>Clear filters <X size={13} /></button></div>
           </div>
 
           <div className="side-panels">
