@@ -55,7 +55,7 @@ DEFINE FIELD created_at ON TABLE product TYPE datetime VALUE time::now();
 DEFINE INDEX product_sku_unique ON TABLE product FIELDS sku UNIQUE;
 DEFINE INDEX product_category_idx ON TABLE product FIELDS category;
 DEFINE INDEX product_uom_idx ON TABLE product FIELDS uom;
-DEFINE INDEX product_name_search ON TABLE product FIELDS name SEARCH ANALYZER ascii BM25;
+DEFINE INDEX product_name_idx ON TABLE product FIELDS name;
 
 --------------------------------------------------------------------
 -- Suppliers and customers
