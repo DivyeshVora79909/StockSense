@@ -29,6 +29,10 @@ export default function App() {
   const locations = [...new Set(products.flatMap(productLocations))].sort();
   const totalUnits = products.reduce((sum, product) => sum + stockTotal(product), 0);
   const lowStock = products.filter((product) => stockTotal(product) <= product.minimum).length;
+  const movementCounts = moves.reduce((counts, move) => {
+    counts[move.type] = (counts[move.type] || 0) + 1;
+    return counts;
+  }, {});
   const visibleProducts = useMemo(() => products.filter((product) => {
     const matchesQuery = `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(query.toLowerCase());
     const matchesCategory = filter === 'All products' || (filter === 'Low stock' ? stockTotal(product) <= product.minimum : product.category === filter);
@@ -85,7 +89,7 @@ export default function App() {
       toLocation: operation.toLocation || '', reference: operation.reference || `${operation.type.toUpperCase()}-${Date.now().toString().slice(-4)}`,
       time: 'Just now', status: 'Done',
     };
-    const nextMoves = [move, ...moves].slice(0, 8);
+    const nextMoves = [move, ...moves];
     setProducts(updated); setMoves(nextMoves); saveInventory({ products: updated, moves: nextMoves });
     if (database) import('./db.js').then(({ persistMovement }) => persistMovement(operation, product)).catch((error) => console.error('Could not save stock movement.', error));
     setModal(''); notify(`${operation.type} recorded for ${product.name}.`);
@@ -132,8 +136,8 @@ export default function App() {
         <section className="stats-grid">
           <StatCard label="Total units in stock" value={money(totalUnits)} change="Across all locations" icon={Boxes} tone="blue" />
           <StatCard label="Low stock items" value={String(lowStock).padStart(2, '0')} change={lowStock ? `${lowStock} need a restock` : 'All levels looking good'} icon={Activity} tone="amber" warning={lowStock > 0} />
-          <StatCard label="Pending receipts" value="04" change="2 arriving today" icon={ArrowDownLeft} tone="green" />
-          <StatCard label="Pending deliveries" value="07" change="3 scheduled today" icon={Truck} tone="violet" />
+          <StatCard label="Receipts recorded" value={String(movementCounts.Receipt || 0).padStart(2, '0')} change="In movement history" icon={ArrowDownLeft} tone="green" />
+          <StatCard label="Deliveries recorded" value={String(movementCounts.Delivery || 0).padStart(2, '0')} change="In movement history" icon={Truck} tone="violet" />
         </section>
 
         <section className="content-grid">
